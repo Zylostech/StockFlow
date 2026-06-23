@@ -110,6 +110,8 @@ const futureAdapters = {
   notificationScheduler: null
 };
 
+window.StockFlowAdapters = futureAdapters;
+
 const state = {
   activeTab: "home",
   searchQuery: "",
@@ -445,5 +447,3 @@ function escapeHtml(value) {
     }[char];
   });
 }
-
-export { futureAdapters };

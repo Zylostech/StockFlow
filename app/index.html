@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#fbfbfd" />
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>StockFlow</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow" id="todayLabel">Today</p>
+          <h1 id="screenTitle">ホーム</h1>
+        </div>
+        <div class="home-badge" aria-label="家族">
+          <span class="sf-symbol" data-symbol="person2"></span>
+          Family
+        </div>
+      </header>
+
+      <section class="screen is-active" id="homeScreen" aria-labelledby="homeTab">
+        <section class="score-panel" aria-label="安心度スコア">
+          <div class="score-ring">
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="ring-track" cx="60" cy="60" r="50" fill="none"></circle>
+              <circle class="ring-value" id="scoreRing" cx="60" cy="60" r="50" fill="none"></circle>
+            </svg>
+            <div>
+              <p class="score-number"><span id="safetyScore">0</span><small>点</small></p>
+              <p class="score-caption">今日の安心度</p>
+            </div>
+          </div>
+          <div class="score-copy">
+            <h2 id="homeSummary">在庫状況を確認しています</h2>
+            <p id="homeDetail">不足が近いものを整理しています。</p>
+          </div>
+        </section>
+
+        <section class="section-block">
+          <div class="section-heading">
+            <h2>次に無くなる商品</h2>
+            <span id="nextProductDate">-</span>
+          </div>
+          <div id="nextProductCard"></div>
+        </section>
+
+        <section class="section-block">
+          <div class="section-heading">
+            <h2>買い物リスト</h2>
+            <span id="shoppingSummary">0件</span>
+          </div>
+          <button class="summary-row" data-navigate="shopping" type="button">
+            <span class="summary-icon blue">
+              <span class="sf-symbol" data-symbol="checklist"></span>
+            </span>
+            <span>
+              <strong id="shoppingHeadline">買うものはありません</strong>
+              <small id="shoppingSubline">不足が近づくと自動で表示します。</small>
+            </span>
+            <span class="chevron">
+              <span class="sf-symbol" data-symbol="chevron"></span>
+            </span>
+          </button>
+        </section>
+      </section>
+
+      <section class="screen" id="inventoryScreen" aria-labelledby="inventoryTab">
+        <div class="search-wrap">
+          <span class="sf-symbol" data-symbol="search"></span>
+          <input id="inventorySearch" type="search" placeholder="商品を検索" autocomplete="off" />
+        </div>
+        <div id="categoryList" class="category-list"></div>
+      </section>
+
+      <section class="screen" id="shoppingScreen" aria-labelledby="shoppingTab">
+        <section class="section-block first">
+          <div class="section-heading">
+            <h2>自動追加</h2>
+            <span id="autoShoppingCount">0件</span>
+          </div>
+          <div id="shoppingList" class="list-group"></div>
+        </section>
+      </section>
+
+      <section class="screen" id="settingsScreen" aria-labelledby="settingsTab">
+        <section class="section-block first">
+          <div class="section-heading">
+            <h2>家族共有</h2>
+          </div>
+          <div class="settings-group">
+            <div class="settings-row">
+              <span class="settings-icon green">
+                <span class="sf-symbol" data-symbol="person2"></span>
+              </span>
+              <span>
+                <strong>夫婦で共有</strong>
+                <small>今後リアルタイム同期を接続します。</small>
+              </span>
+              <span class="status-pill">準備中</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-block">
+          <div class="section-heading">
+            <h2>通知設定</h2>
+          </div>
+          <div class="settings-group">
+            <label class="settings-row switch-row">
+              <span class="settings-icon orange">
+                <span class="sf-symbol" data-symbol="bell"></span>
+              </span>
+              <span>
+                <strong>不足前に通知</strong>
+                <small>次の段階でプッシュ通知を接続します。</small>
+              </span>
+              <input id="notificationToggle" type="checkbox" />
+            </label>
+            <label class="settings-row switch-row">
+              <span class="settings-icon blue">
+                <span class="sf-symbol" data-symbol="cart"></span>
+              </span>
+              <span>
+                <strong>買い物リスト自動追加</strong>
+                <small>しきい値を下回った商品を表示します。</small>
+              </span>
+              <input id="autoListToggle" type="checkbox" checked />
+            </label>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <nav class="tabbar" aria-label="画面切り替え">
+      <button class="tab is-active" id="homeTab" data-tab="home" type="button">
+        <span class="sf-symbol" data-symbol="house"></span>
+        <span>ホーム</span>
+      </button>
+      <button class="tab" id="inventoryTab" data-tab="inventory" type="button">
+        <span class="sf-symbol" data-symbol="shippingbox"></span>
+        <span>在庫</span>
+      </button>
+      <button class="tab" id="shoppingTab" data-tab="shopping" type="button">
+        <span class="sf-symbol" data-symbol="checklist"></span>
+        <span>買い物</span>
+      </button>
+      <button class="tab" id="settingsTab" data-tab="settings" type="button">
+        <span class="sf-symbol" data-symbol="gear"></span>
+        <span>設定</span>
+      </button>
+    </nav>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

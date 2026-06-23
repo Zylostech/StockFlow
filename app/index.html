@@ -95,6 +95,18 @@
             </article>
           </section>
 
+          <section class="home-action-row" aria-label="ホーム操作">
+            <button class="open-actions-button" data-action="open-quick-actions" type="button">
+              <span class="quick-icon blue">
+                <span class="sf-symbol" data-symbol="plus"></span>
+              </span>
+              <span>
+                <strong>クイックアクション</strong>
+                <small>追加、買い物、設定を開く</small>
+              </span>
+            </button>
+          </section>
+
           <section class="content-grid">
             <div class="main-column">
               <section class="section-block">
@@ -121,40 +133,6 @@
                 </div>
               </section>
             </div>
-
-            <aside class="quick-panel" aria-label="クイックアクション">
-              <h2>クイックアクション</h2>
-              <button class="quick-action" data-action="scan-barcode" type="button">
-                <span class="quick-icon blue">
-                  <span class="sf-symbol" data-symbol="barcode"></span>
-                </span>
-                <span>
-                  <strong>バーコードで追加</strong>
-                  <small>カメラで読み取り在庫に追加</small>
-                </span>
-                <span class="sf-symbol arrow" data-symbol="arrow"></span>
-              </button>
-              <button class="quick-action" data-tab="shopping" type="button">
-                <span class="quick-icon pink">
-                  <span class="sf-symbol" data-symbol="cart"></span>
-                </span>
-                <span>
-                  <strong>買い物リストを見る</strong>
-                  <small id="shoppingSubline">不足が近づくと自動で表示します。</small>
-                </span>
-                <span class="sf-symbol arrow" data-symbol="arrow"></span>
-              </button>
-              <button class="quick-action" data-tab="settings" type="button">
-                <span class="quick-icon beige">
-                  <span class="sf-symbol" data-symbol="gear"></span>
-                </span>
-                <span>
-                  <strong>設定を開く</strong>
-                  <small>共有と通知を管理</small>
-                </span>
-                <span class="sf-symbol arrow" data-symbol="arrow"></span>
-              </button>
-            </aside>
           </section>
 
           <div class="hidden-home-values" aria-hidden="true">
@@ -272,6 +250,53 @@
         </button>
       </nav>
     </div>
+
+    <dialog class="quick-dialog" id="quickActionsDialog">
+      <section class="quick-sheet" aria-labelledby="quickActionsTitle">
+        <div class="scanner-grabber"></div>
+        <div class="quick-sheet-head">
+          <div>
+            <p class="welcome">QUICK ACTION</p>
+            <h2 id="quickActionsTitle">クイックアクション</h2>
+          </div>
+          <button class="scanner-close" data-action="close-quick-actions" type="button" aria-label="閉じる">
+            <span class="sf-symbol" data-symbol="xmark"></span>
+          </button>
+        </div>
+        <div class="quick-sheet-list">
+          <button class="quick-action" data-action="scan-barcode" type="button">
+            <span class="quick-icon blue">
+              <span class="sf-symbol" data-symbol="barcode"></span>
+            </span>
+            <span>
+              <strong>バーコードで追加</strong>
+              <small>カメラで読み取り在庫に追加</small>
+            </span>
+            <span class="sf-symbol arrow" data-symbol="arrow"></span>
+          </button>
+          <button class="quick-action" data-tab="shopping" type="button">
+            <span class="quick-icon pink">
+              <span class="sf-symbol" data-symbol="cart"></span>
+            </span>
+            <span>
+              <strong>買い物リストを見る</strong>
+              <small id="shoppingSubline">不足が近づくと自動で表示します。</small>
+            </span>
+            <span class="sf-symbol arrow" data-symbol="arrow"></span>
+          </button>
+          <button class="quick-action" data-tab="settings" type="button">
+            <span class="quick-icon beige">
+              <span class="sf-symbol" data-symbol="gear"></span>
+            </span>
+            <span>
+              <strong>設定を開く</strong>
+              <small>共有と通知を管理</small>
+            </span>
+            <span class="sf-symbol arrow" data-symbol="arrow"></span>
+          </button>
+        </div>
+      </section>
+    </dialog>
 
     <dialog class="scanner-dialog" id="barcodeDialog">
       <section class="scanner-sheet" aria-labelledby="barcodeDialogTitle">

@@ -81,6 +81,15 @@ const barcodeProducts = {
   }
 };
 
+const categorySymbols = {
+  紙用品: "PAPER",
+  洗濯: "WASH",
+  育児: "BABY",
+  飲料: "DRINK",
+  キッチン: "HOME",
+  その他: "ITEM"
+};
+
 const initialProducts = [
   createProduct({
     id: "toilet-paper",
@@ -319,6 +328,7 @@ function saveSettings() {
 }
 
 async function openBarcodeScanner() {
+  closeQuickActions();
   const dialog = $("#barcodeDialog");
   dialog.showModal();
   hydrateSymbols(dialog);
@@ -357,6 +367,19 @@ async function openBarcodeScanner() {
     scanBarcodeFrame();
   } catch (error) {
     setScannerStatus("カメラを起動できませんでした。Safariのカメラ許可を確認してください。");
+  }
+}
+
+function openQuickActions() {
+  const dialog = $("#quickActionsDialog");
+  dialog.showModal();
+  hydrateSymbols(dialog);
+}
+
+function closeQuickActions() {
+  const dialog = $("#quickActionsDialog");
+  if (dialog?.open) {
+    dialog.close();
   }
 }
 
@@ -485,10 +508,22 @@ function bindStaticEvents() {
   });
 
   $("#barcodeDialog").addEventListener("close", stopBarcodeScanner);
+  $("#quickActionsDialog").addEventListener("click", (event) => {
+    if (event.target === $("#quickActionsDialog")) {
+      closeQuickActions();
+    }
+  });
+  $("#barcodeDialog").addEventListener("click", (event) => {
+    if (event.target === $("#barcodeDialog")) {
+      closeBarcodeScanner();
+    }
+  });
 }
 
 function handleAction(action) {
   const actions = {
+    "open-quick-actions": openQuickActions,
+    "close-quick-actions": closeQuickActions,
     "scan-barcode": openBarcodeScanner,
     "close-barcode": closeBarcodeScanner,
     "restart-barcode": restartBarcodeScanner,
@@ -499,6 +534,7 @@ function handleAction(action) {
 }
 
 function setActiveTab(tabName) {
+  closeQuickActions();
   state.activeTab = tabName;
   $$(".screen").forEach((screen) => {
     screen.classList.toggle("is-active", screen.id === `${tabName}Screen`);
@@ -654,9 +690,7 @@ function toggleShoppingComplete(productId) {
 function productCardTemplate(product) {
   return `
     <article class="product-card">
-      <div class="product-image">
-        <img src="${product.imageUrl}" alt="${escapeHtml(product.name)}" loading="lazy" />
-      </div>
+      ${productVisualTemplate(product, "product-image")}
       <div>
         <div class="product-title-line">
           <h3>${escapeHtml(product.name)}</h3>
@@ -687,9 +721,7 @@ function categoryTemplate(category, products) {
 function inventoryRowTemplate(product) {
   return `
     <article class="inventory-row">
-      <div class="row-image">
-        <img src="${product.imageUrl}" alt="${escapeHtml(product.name)}" loading="lazy" />
-      </div>
+      ${productVisualTemplate(product, "row-image")}
       <div class="row-copy">
         <strong>${escapeHtml(product.name)}</strong>
         <small>${escapeHtml(product.category)} · あと${product.daysLeft}日</small>
@@ -705,15 +737,33 @@ function shoppingRowTemplate(product) {
       <button class="check-button" data-complete-shopping="${product.id}" type="button" aria-label="${escapeHtml(product.name)}を完了">
         ${product.shopping.completed ? '<span class="sf-symbol" data-symbol="check"></span>' : ""}
       </button>
-      <div class="row-image">
-        <img src="${product.imageUrl}" alt="${escapeHtml(product.name)}" loading="lazy" />
-      </div>
+      ${productVisualTemplate(product, "row-image")}
       <div class="row-copy">
         <strong>${escapeHtml(product.name)}</strong>
         <small>残り${product.quantity}個 · 不足予定 ${escapeHtml(product.nextOutDate)}</small>
       </div>
     </article>
   `;
+}
+
+function productVisualTemplate(product, className) {
+  const label = categorySymbols[product.category] || categorySymbols.その他;
+  const tone = getCategoryTone(product.category);
+  return `
+    <div class="${className} product-mark ${tone}" aria-label="${escapeHtml(product.category)}">
+      <span>${escapeHtml(label)}</span>
+    </div>
+  `;
+}
+
+function getCategoryTone(category) {
+  return {
+    紙用品: "tone-beige",
+    洗濯: "tone-blue",
+    育児: "tone-pink",
+    飲料: "tone-navy",
+    キッチン: "tone-gray"
+  }[category] || "tone-gray";
 }
 
 function emptyTemplate(message) {

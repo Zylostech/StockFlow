@@ -13,6 +13,10 @@ const symbols = {
     '<svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
   arrow:
     '<svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  barcode:
+    '<svg viewBox="0 0 24 24" fill="none"><path d="M4 6v12M7 6v12M11 6v12M14 6v12M20 6v12M17 6v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  xmark:
+    '<svg viewBox="0 0 24 24" fill="none"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
   gear:
     '<svg viewBox="0 0 24 24" fill="none"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a8.1 8.1 0 0 0 .1-1.2c0-.4 0-.8-.1-1.2l2-1.5-2-3.4-2.4 1a8 8 0 0 0-2-1.1L14.7 5h-4l-.4 2.6a8 8 0 0 0-2 1.1l-2.4-1-2 3.4 2 1.5a8.1 8.1 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 2 1.1l.4 2.6h4l.4-2.6a8 8 0 0 0 2-1.1l2.4 1 2-3.4-2.1-1.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
   person2:
@@ -42,6 +46,39 @@ const productImages = {
     "https://images.unsplash.com/photo-1544145945-f90425340c7e?auto=format&fit=crop&w=240&q=80",
   kitchen:
     "https://images.unsplash.com/photo-1584464491033-06628f3a6b7b?auto=format&fit=crop&w=240&q=80"
+};
+
+const barcodeProducts = {
+  "4900000000010": {
+    name: "トイレットペーパー",
+    category: "紙用品",
+    imageUrl: productImages.paper,
+    minQuantity: 3
+  },
+  "4900000000027": {
+    name: "洗濯洗剤",
+    category: "洗濯",
+    imageUrl: productImages.detergent,
+    minQuantity: 2
+  },
+  "4900000000034": {
+    name: "ティッシュ",
+    category: "紙用品",
+    imageUrl: productImages.tissue,
+    minQuantity: 2
+  },
+  "4900000000041": {
+    name: "オムツ",
+    category: "育児",
+    imageUrl: productImages.diaper,
+    minQuantity: 8
+  },
+  "4900000000058": {
+    name: "麦茶",
+    category: "飲料",
+    imageUrl: productImages.drink,
+    minQuantity: 2
+  }
 };
 
 const initialProducts = [
@@ -108,8 +145,15 @@ const initialProducts = [
 ];
 
 const futureAdapters = {
-  barcodeScanner: null,
-  imageRecognition: null,
+  barcodeScanner: {
+    open: openBarcodeScanner,
+    stop: stopBarcodeScanner,
+    lookup: lookupProductByBarcode
+  },
+  imageRecognition: {
+    recognize: null,
+    addRecognizedProduct: null
+  },
   familySync: null,
   notificationScheduler: null
 };
@@ -120,7 +164,14 @@ const state = {
   activeTab: "home",
   searchQuery: "",
   products: loadProducts(),
-  settings: loadSettings()
+  settings: loadSettings(),
+  scanner: {
+    detector: null,
+    timer: null,
+    stream: null,
+    active: false,
+    lastCode: ""
+  }
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -137,7 +188,9 @@ function boot() {
 
 function createProduct(product) {
   return {
-    id: product.id,
+    id: product.id || crypto.randomUUID(),
+    barcode: product.barcode || "",
+    source: product.source || "starter",
     name: product.name,
     category: product.category,
     imageUrl: product.imageUrl,
@@ -151,6 +204,84 @@ function createProduct(product) {
     },
     history: []
   };
+}
+
+function createBarcodeProduct(barcode, productInfo) {
+  return createProduct({
+    id: `barcode-${barcode}-${Date.now()}`,
+    barcode,
+    source: "barcode",
+    name: productInfo.name,
+    category: productInfo.category,
+    imageUrl: productInfo.imageUrl,
+    quantity: 1,
+    minQuantity: productInfo.minQuantity || 1,
+    daysLeft: 14,
+    nextOutDate: dateAfter(14)
+  });
+}
+
+function lookupProductByBarcode(barcode) {
+  const normalized = normalizeBarcode(barcode);
+  return (
+    barcodeProducts[normalized] || {
+      name: `バーコード商品 ${normalized.slice(-4)}`,
+      category: "その他",
+      imageUrl: productImages.kitchen,
+      minQuantity: 1
+    }
+  );
+}
+
+function addProductByBarcode(barcode) {
+  const normalized = normalizeBarcode(barcode);
+  if (!normalized) {
+    setScannerStatus("バーコード番号を入力してください。");
+    return null;
+  }
+
+  const productInfo = lookupProductByBarcode(normalized);
+  const existingProduct = state.products.find((product) => {
+    return (
+      product.barcode === normalized ||
+      (!product.barcode &&
+        product.name === productInfo.name &&
+        product.category === productInfo.category)
+    );
+  });
+
+  if (existingProduct) {
+    state.products = state.products.map((product) => {
+      if (product.id !== existingProduct.id) return product;
+      return {
+        ...product,
+        barcode: normalized,
+        source: product.source === "starter" ? "barcode" : product.source,
+        quantity: product.quantity + 1,
+        daysLeft: Math.max(product.daysLeft, 14),
+        nextOutDate: dateAfter(Math.max(product.daysLeft, 14)),
+        shopping: {
+          ...product.shopping,
+          completed: false
+        },
+        history: [
+          ...(product.history || []),
+          { type: "barcode-restock", barcode: normalized, at: new Date().toISOString() }
+        ]
+      };
+    });
+  } else {
+    state.products = [
+      createBarcodeProduct(normalized, productInfo),
+      ...state.products
+    ];
+  }
+
+  saveProducts();
+  render();
+  setActiveTab("inventory");
+  closeBarcodeScanner();
+  return productInfo;
 }
 
 function loadProducts() {
@@ -187,6 +318,126 @@ function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
 }
 
+async function openBarcodeScanner() {
+  const dialog = $("#barcodeDialog");
+  dialog.showModal();
+  hydrateSymbols(dialog);
+  state.scanner.lastCode = "";
+  setScannerStatus("カメラを準備しています。");
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setScannerStatus("この環境ではカメラを起動できません。下の番号入力で追加できます。");
+    return;
+  }
+
+  if (!("BarcodeDetector" in window)) {
+    setScannerStatus("このブラウザは自動バーコード検出に未対応です。番号入力を使ってください。");
+    return;
+  }
+
+  try {
+    state.scanner.detector ||= new BarcodeDetector({
+      formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"]
+    });
+    state.scanner.stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    });
+
+    const video = $("#barcodeVideo");
+    video.srcObject = state.scanner.stream;
+    await video.play();
+    $(".scanner-view").classList.add("is-live");
+    state.scanner.active = true;
+    setScannerStatus("バーコードを枠の中に入れてください。");
+    scanBarcodeFrame();
+  } catch (error) {
+    setScannerStatus("カメラを起動できませんでした。Safariのカメラ許可を確認してください。");
+  }
+}
+
+async function scanBarcodeFrame() {
+  if (!state.scanner.active || !state.scanner.detector) return;
+
+  try {
+    const codes = await state.scanner.detector.detect($("#barcodeVideo"));
+    const rawValue = codes[0]?.rawValue;
+
+    if (rawValue && rawValue !== state.scanner.lastCode) {
+      state.scanner.lastCode = rawValue;
+      setScannerStatus(`読み取りました: ${rawValue}`);
+      addProductByBarcode(rawValue);
+      return;
+    }
+  } catch {
+    setScannerStatus("読み取り中です。バーコードを明るい場所で近づけてください。");
+  }
+
+  state.scanner.timer = window.setTimeout(scanBarcodeFrame, 420);
+}
+
+function stopBarcodeScanner() {
+  state.scanner.active = false;
+  if (state.scanner.timer) {
+    window.clearTimeout(state.scanner.timer);
+    state.scanner.timer = null;
+  }
+
+  if (state.scanner.stream) {
+    state.scanner.stream.getTracks().forEach((track) => track.stop());
+    state.scanner.stream = null;
+  }
+
+  const video = $("#barcodeVideo");
+  if (video) {
+    video.pause();
+    video.srcObject = null;
+  }
+
+  $(".scanner-view")?.classList.remove("is-live");
+}
+
+function closeBarcodeScanner() {
+  stopBarcodeScanner();
+  if ($("#barcodeDialog").open) {
+    $("#barcodeDialog").close();
+  }
+}
+
+function restartBarcodeScanner() {
+  stopBarcodeScanner();
+  openBarcodeScanner();
+}
+
+function addManualBarcode() {
+  const input = $("#manualBarcodeInput");
+  const product = addProductByBarcode(input.value);
+  if (product) {
+    input.value = "";
+  }
+}
+
+function setScannerStatus(message) {
+  $("#barcodeStatus").textContent = message;
+}
+
+function normalizeBarcode(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function dateAfter(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return new Intl.DateTimeFormat("ja-JP", {
+    month: "numeric",
+    day: "numeric"
+  }).format(date);
+}
+
 function bindStaticEvents() {
   document.addEventListener("click", (event) => {
     const tabTrigger = event.target.closest("[data-tab]");
@@ -200,6 +451,13 @@ function bindStaticEvents() {
     if (navigateTrigger) {
       event.preventDefault();
       setActiveTab(navigateTrigger.dataset.navigate);
+      return;
+    }
+
+    const actionTrigger = event.target.closest("[data-action]");
+    if (actionTrigger) {
+      event.preventDefault();
+      handleAction(actionTrigger.dataset.action);
       return;
     }
 
@@ -225,6 +483,19 @@ function bindStaticEvents() {
     saveSettings();
     render();
   });
+
+  $("#barcodeDialog").addEventListener("close", stopBarcodeScanner);
+}
+
+function handleAction(action) {
+  const actions = {
+    "scan-barcode": openBarcodeScanner,
+    "close-barcode": closeBarcodeScanner,
+    "restart-barcode": restartBarcodeScanner,
+    "manual-barcode": addManualBarcode
+  };
+
+  actions[action]?.();
 }
 
 function setActiveTab(tabName) {

@@ -124,13 +124,13 @@
 
             <aside class="quick-panel" aria-label="クイックアクション">
               <h2>クイックアクション</h2>
-              <button class="quick-action" data-tab="inventory" type="button">
+              <button class="quick-action" data-action="scan-barcode" type="button">
                 <span class="quick-icon blue">
-                  <span class="sf-symbol" data-symbol="plus"></span>
+                  <span class="sf-symbol" data-symbol="barcode"></span>
                 </span>
                 <span>
-                  <strong>在庫を確認する</strong>
-                  <small>登録済みの商品を見る</small>
+                  <strong>バーコードで追加</strong>
+                  <small>カメラで読み取り在庫に追加</small>
                 </span>
                 <span class="sf-symbol arrow" data-symbol="arrow"></span>
               </button>
@@ -170,6 +170,12 @@
             <p class="welcome">STOCK LIST</p>
             <h1>STOCK</h1>
             <p>カテゴリー別に、家の在庫を美しく整理します。</p>
+          </div>
+          <div class="inventory-toolbar">
+            <button class="scan-button" data-action="scan-barcode" type="button">
+              <span class="sf-symbol" data-symbol="barcode"></span>
+              バーコードで追加
+            </button>
           </div>
           <div class="search-wrap">
             <span class="sf-symbol" data-symbol="search"></span>
@@ -266,6 +272,53 @@
         </button>
       </nav>
     </div>
+
+    <dialog class="scanner-dialog" id="barcodeDialog">
+      <section class="scanner-sheet" aria-labelledby="barcodeDialogTitle">
+        <div class="scanner-grabber"></div>
+        <div class="scanner-head">
+          <div>
+            <p class="welcome">BARCODE SCAN</p>
+            <h2 id="barcodeDialogTitle">バーコードで追加</h2>
+          </div>
+          <button class="scanner-close" data-action="close-barcode" type="button" aria-label="閉じる">
+            <span class="sf-symbol" data-symbol="xmark"></span>
+          </button>
+        </div>
+
+        <div class="scanner-view">
+          <video id="barcodeVideo" playsinline muted></video>
+          <div class="scan-frame" aria-hidden="true"></div>
+          <div class="scanner-placeholder" id="scannerPlaceholder">
+            <span class="sf-symbol" data-symbol="barcode"></span>
+            <strong>カメラを起動します</strong>
+            <small>iPhoneではカメラの許可が必要です。</small>
+          </div>
+        </div>
+
+        <p class="scanner-status" id="barcodeStatus">
+          バーコードを枠の中に入れてください。
+        </p>
+
+        <div class="manual-barcode">
+          <label for="manualBarcodeInput">カメラが使えない場合</label>
+          <div>
+            <input
+              id="manualBarcodeInput"
+              inputmode="numeric"
+              autocomplete="off"
+              placeholder="例: 4900000000010"
+            />
+            <button data-action="manual-barcode" type="button">追加</button>
+          </div>
+        </div>
+
+        <div class="scanner-actions">
+          <button class="secondary-action" data-action="close-barcode" type="button">閉じる</button>
+          <button class="primary-action" data-action="restart-barcode" type="button">再スキャン</button>
+        </div>
+      </section>
+    </dialog>
 
     <script defer src="./app.js"></script>
   </body>

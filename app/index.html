@@ -3,155 +3,269 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#fbfbfd" />
+    <meta name="theme-color" content="#f7f1e9" />
     <link rel="manifest" href="./manifest.json" />
     <link rel="stylesheet" href="./styles.css" />
     <title>StockFlow</title>
   </head>
   <body>
-    <main class="app-shell">
-      <header class="app-header">
+    <div class="app-frame">
+      <aside class="brand-rail" aria-label="StockFlow">
         <div>
-          <p class="eyebrow" id="todayLabel">Today</p>
-          <h1 id="screenTitle">ホーム</h1>
-        </div>
-        <div class="home-badge" aria-label="家族">
-          <span class="sf-symbol" data-symbol="person2"></span>
-          Family
-        </div>
-      </header>
-
-      <section class="screen is-active" id="homeScreen" aria-labelledby="homeTab">
-        <section class="score-panel" aria-label="安心度スコア">
-          <div class="score-ring">
-            <svg viewBox="0 0 120 120" aria-hidden="true">
-              <circle class="ring-track" cx="60" cy="60" r="50" fill="none"></circle>
-              <circle class="ring-value" id="scoreRing" cx="60" cy="60" r="50" fill="none"></circle>
-            </svg>
-            <div>
-              <p class="score-number"><span id="safetyScore">0</span><small>点</small></p>
-              <p class="score-caption">今日の安心度</p>
-            </div>
-          </div>
-          <div class="score-copy">
-            <h2 id="homeSummary">在庫状況を確認しています</h2>
-            <p id="homeDetail">不足が近いものを整理しています。</p>
-          </div>
-        </section>
-
-        <section class="section-block">
-          <div class="section-heading">
-            <h2>次に無くなる商品</h2>
-            <span id="nextProductDate">-</span>
-          </div>
-          <div id="nextProductCard"></div>
-        </section>
-
-        <section class="section-block">
-          <div class="section-heading">
-            <h2>買い物リスト</h2>
-            <span id="shoppingSummary">0件</span>
-          </div>
-          <button class="summary-row" data-navigate="shopping" type="button">
-            <span class="summary-icon blue">
+          <a class="logo" href="#home" data-tab="home" aria-label="StockFlow ホーム">
+            <span>StockFlow</span>
+            <small>INVENTORY SYSTEM</small>
+          </a>
+          <nav class="rail-nav" aria-label="サイドナビゲーション">
+            <button class="rail-link is-active" data-tab="home" type="button">
+              <span class="sf-symbol" data-symbol="house"></span>
+              HOME
+            </button>
+            <button class="rail-link" data-tab="inventory" type="button">
+              <span class="sf-symbol" data-symbol="shippingbox"></span>
+              STOCK
+            </button>
+            <button class="rail-link" data-tab="shopping" type="button">
               <span class="sf-symbol" data-symbol="checklist"></span>
-            </span>
-            <span>
-              <strong id="shoppingHeadline">買うものはありません</strong>
-              <small id="shoppingSubline">不足が近づくと自動で表示します。</small>
-            </span>
-            <span class="chevron">
-              <span class="sf-symbol" data-symbol="chevron"></span>
-            </span>
-          </button>
-        </section>
-      </section>
-
-      <section class="screen" id="inventoryScreen" aria-labelledby="inventoryTab">
-        <div class="search-wrap">
-          <span class="sf-symbol" data-symbol="search"></span>
-          <input id="inventorySearch" type="search" placeholder="商品を検索" autocomplete="off" />
+              SHOPPING
+            </button>
+            <button class="rail-link" data-tab="settings" type="button">
+              <span class="sf-symbol" data-symbol="gear"></span>
+              SETTING
+            </button>
+          </nav>
         </div>
-        <div id="categoryList" class="category-list"></div>
-      </section>
-
-      <section class="screen" id="shoppingScreen" aria-labelledby="shoppingTab">
-        <section class="section-block first">
-          <div class="section-heading">
-            <h2>自動追加</h2>
-            <span id="autoShoppingCount">0件</span>
+        <div class="profile-chip">
+          <div class="avatar">SF</div>
+          <div>
+            <strong>FAMILY</strong>
+            <small>Shared home</small>
           </div>
-          <div id="shoppingList" class="list-group"></div>
-        </section>
-      </section>
+        </div>
+      </aside>
 
-      <section class="screen" id="settingsScreen" aria-labelledby="settingsTab">
-        <section class="section-block first">
-          <div class="section-heading">
-            <h2>家族共有</h2>
+      <main class="app-shell">
+        <header class="app-header">
+          <a class="mobile-logo" href="#home" data-tab="home" aria-label="StockFlow ホーム">
+            <span>StockFlow</span>
+            <small>INVENTORY SYSTEM</small>
+          </a>
+          <div class="header-tools">
+            <span class="today-pill" id="todayLabel">Today</span>
+            <button class="round-tool" data-tab="settings" type="button" aria-label="設定">
+              <span class="sf-symbol" data-symbol="gear"></span>
+            </button>
           </div>
-          <div class="settings-group">
-            <div class="settings-row">
-              <span class="settings-icon green">
-                <span class="sf-symbol" data-symbol="person2"></span>
-              </span>
-              <span>
-                <strong>夫婦で共有</strong>
-                <small>今後リアルタイム同期を接続します。</small>
-              </span>
-              <span class="status-pill">準備中</span>
+        </header>
+
+        <section class="screen is-active" id="homeScreen" aria-labelledby="homeTab">
+          <div class="hero-grid">
+            <section class="hero-copy" aria-label="ホーム">
+              <p class="welcome">WELCOME BACK,</p>
+              <h1 id="screenTitle">HOME</h1>
+              <p class="hero-lead">在庫状況をスマートに管理しましょう。</p>
+              <div class="decor-line"></div>
+            </section>
+
+            <section class="hero-art" aria-label="StockFlow visual">
+              <div class="pink-block"></div>
+              <div class="navy-arch"></div>
+              <div class="leaf leaf-one"></div>
+              <div class="leaf leaf-two"></div>
+              <div class="leaf leaf-three"></div>
+              <p class="vertical-copy">KEEP THINGS ORGANIZED.</p>
+              <p class="year-mark">20<br />25</p>
+            </section>
+          </div>
+
+          <section class="stats-grid" aria-label="サマリー">
+            <article class="metric-card">
+              <div>
+                <p>在庫アイテム数</p>
+                <strong id="inventoryCount">0</strong><span>件</span>
+              </div>
+              <div class="mini-bars navy-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+            </article>
+            <article class="metric-card pink-card">
+              <div>
+                <p>買い物リスト</p>
+                <strong id="shoppingMetric">0</strong><span>件</span>
+              </div>
+              <div class="mini-bars pink-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+            </article>
+          </section>
+
+          <section class="content-grid">
+            <div class="main-column">
+              <section class="section-block">
+                <div class="section-heading">
+                  <h2>次に無くなる商品</h2>
+                  <span id="nextProductDate">-</span>
+                </div>
+                <div id="nextProductCard"></div>
+              </section>
+
+              <section class="section-block">
+                <div class="section-heading">
+                  <h2>最近のアクティビティ</h2>
+                  <button class="text-link" data-tab="inventory" type="button">VIEW ALL</button>
+                </div>
+                <div class="activity-card">
+                  <div class="activity-icon">
+                    <span class="sf-symbol" data-symbol="shippingbox"></span>
+                  </div>
+                  <div>
+                    <strong id="homeSummary">在庫状況を確認しています</strong>
+                    <small id="homeDetail">不足が近いものを整理しています。</small>
+                  </div>
+                </div>
+              </section>
             </div>
+
+            <aside class="quick-panel" aria-label="クイックアクション">
+              <h2>クイックアクション</h2>
+              <button class="quick-action" data-tab="inventory" type="button">
+                <span class="quick-icon blue">
+                  <span class="sf-symbol" data-symbol="plus"></span>
+                </span>
+                <span>
+                  <strong>在庫を確認する</strong>
+                  <small>登録済みの商品を見る</small>
+                </span>
+                <span class="sf-symbol arrow" data-symbol="arrow"></span>
+              </button>
+              <button class="quick-action" data-tab="shopping" type="button">
+                <span class="quick-icon pink">
+                  <span class="sf-symbol" data-symbol="cart"></span>
+                </span>
+                <span>
+                  <strong>買い物リストを見る</strong>
+                  <small id="shoppingSubline">不足が近づくと自動で表示します。</small>
+                </span>
+                <span class="sf-symbol arrow" data-symbol="arrow"></span>
+              </button>
+              <button class="quick-action" data-tab="settings" type="button">
+                <span class="quick-icon beige">
+                  <span class="sf-symbol" data-symbol="gear"></span>
+                </span>
+                <span>
+                  <strong>設定を開く</strong>
+                  <small>共有と通知を管理</small>
+                </span>
+                <span class="sf-symbol arrow" data-symbol="arrow"></span>
+              </button>
+            </aside>
+          </section>
+
+          <div class="hidden-home-values" aria-hidden="true">
+            <span id="safetyScore">0</span>
+            <svg><circle id="scoreRing"></circle></svg>
+            <span id="shoppingSummary">0件</span>
+            <strong id="shoppingHeadline">買うものはありません</strong>
           </div>
         </section>
 
-        <section class="section-block">
-          <div class="section-heading">
-            <h2>通知設定</h2>
+        <section class="screen" id="inventoryScreen" aria-labelledby="inventoryTab">
+          <div class="screen-head">
+            <p class="welcome">STOCK LIST</p>
+            <h1>STOCK</h1>
+            <p>カテゴリー別に、家の在庫を美しく整理します。</p>
           </div>
-          <div class="settings-group">
-            <label class="settings-row switch-row">
-              <span class="settings-icon orange">
-                <span class="sf-symbol" data-symbol="bell"></span>
-              </span>
-              <span>
-                <strong>不足前に通知</strong>
-                <small>次の段階でプッシュ通知を接続します。</small>
-              </span>
-              <input id="notificationToggle" type="checkbox" />
-            </label>
-            <label class="settings-row switch-row">
-              <span class="settings-icon blue">
-                <span class="sf-symbol" data-symbol="cart"></span>
-              </span>
-              <span>
-                <strong>買い物リスト自動追加</strong>
-                <small>しきい値を下回った商品を表示します。</small>
-              </span>
-              <input id="autoListToggle" type="checkbox" checked />
-            </label>
+          <div class="search-wrap">
+            <span class="sf-symbol" data-symbol="search"></span>
+            <input id="inventorySearch" type="search" placeholder="商品を検索" autocomplete="off" />
           </div>
+          <div id="categoryList" class="category-list"></div>
         </section>
-      </section>
-    </main>
 
-    <nav class="tabbar" aria-label="画面切り替え">
-      <button class="tab is-active" id="homeTab" data-tab="home" type="button">
-        <span class="sf-symbol" data-symbol="house"></span>
-        <span>ホーム</span>
-      </button>
-      <button class="tab" id="inventoryTab" data-tab="inventory" type="button">
-        <span class="sf-symbol" data-symbol="shippingbox"></span>
-        <span>在庫</span>
-      </button>
-      <button class="tab" id="shoppingTab" data-tab="shopping" type="button">
-        <span class="sf-symbol" data-symbol="checklist"></span>
-        <span>買い物</span>
-      </button>
-      <button class="tab" id="settingsTab" data-tab="settings" type="button">
-        <span class="sf-symbol" data-symbol="gear"></span>
-        <span>設定</span>
-      </button>
-    </nav>
+        <section class="screen" id="shoppingScreen" aria-labelledby="shoppingTab">
+          <div class="screen-head">
+            <p class="welcome">SHOPPING LIST</p>
+            <h1>SHOPPING</h1>
+            <p>不足が近い商品だけを、買い物前に確認できます。</p>
+          </div>
+          <section class="section-block first">
+            <div class="section-heading">
+              <h2>自動追加</h2>
+              <span id="autoShoppingCount">0件</span>
+            </div>
+            <div id="shoppingList" class="list-group"></div>
+          </section>
+        </section>
+
+        <section class="screen" id="settingsScreen" aria-labelledby="settingsTab">
+          <div class="screen-head">
+            <p class="welcome">PREFERENCES</p>
+            <h1>SETTING</h1>
+            <p>家族共有と通知の準備を整えます。</p>
+          </div>
+          <section class="section-block first">
+            <div class="section-heading">
+              <h2>家族共有</h2>
+            </div>
+            <div class="settings-group">
+              <div class="settings-row">
+                <span class="settings-icon navy">
+                  <span class="sf-symbol" data-symbol="person2"></span>
+                </span>
+                <span>
+                  <strong>夫婦で共有</strong>
+                  <small>今後リアルタイム同期を接続します。</small>
+                </span>
+                <span class="status-pill">準備中</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="section-block">
+            <div class="section-heading">
+              <h2>通知設定</h2>
+            </div>
+            <div class="settings-group">
+              <label class="settings-row switch-row">
+                <span class="settings-icon pink">
+                  <span class="sf-symbol" data-symbol="bell"></span>
+                </span>
+                <span>
+                  <strong>不足前に通知</strong>
+                  <small>次の段階でプッシュ通知を接続します。</small>
+                </span>
+                <input id="notificationToggle" type="checkbox" />
+              </label>
+              <label class="settings-row switch-row">
+                <span class="settings-icon blue">
+                  <span class="sf-symbol" data-symbol="cart"></span>
+                </span>
+                <span>
+                  <strong>買い物リスト自動追加</strong>
+                  <small>しきい値を下回った商品を表示します。</small>
+                </span>
+                <input id="autoListToggle" type="checkbox" checked />
+              </label>
+            </div>
+          </section>
+        </section>
+      </main>
+
+      <nav class="tabbar" aria-label="画面切り替え">
+        <button class="tab is-active" id="homeTab" data-tab="home" type="button">
+          <span class="sf-symbol" data-symbol="house"></span>
+          <span>ホーム</span>
+        </button>
+        <button class="tab" id="inventoryTab" data-tab="inventory" type="button">
+          <span class="sf-symbol" data-symbol="shippingbox"></span>
+          <span>在庫</span>
+        </button>
+        <button class="tab" id="shoppingTab" data-tab="shopping" type="button">
+          <span class="sf-symbol" data-symbol="checklist"></span>
+          <span>買い物</span>
+        </button>
+        <button class="tab" id="settingsTab" data-tab="settings" type="button">
+          <span class="sf-symbol" data-symbol="gear"></span>
+          <span>設定</span>
+        </button>
+      </nav>
+    </div>
 
     <script defer src="./app.js"></script>
   </body>

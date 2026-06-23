@@ -9,6 +9,10 @@ const symbols = {
     '<svg viewBox="0 0 24 24" fill="none"><path d="m4 8 8-4 8 4v9l-8 4-8-4V8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m4 8 8 4 8-4M12 12v9" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
   checklist:
     '<svg viewBox="0 0 24 24" fill="none"><path d="m5 12 3 3 6-7M5 19h14M16 8h3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  plus:
+    '<svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
+  arrow:
+    '<svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   gear:
     '<svg viewBox="0 0 24 24" fill="none"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a8.1 8.1 0 0 0 .1-1.2c0-.4 0-.8-.1-1.2l2-1.5-2-3.4-2.4 1a8 8 0 0 0-2-1.1L14.7 5h-4l-.4 2.6a8 8 0 0 0-2 1.1l-2.4-1-2 3.4 2 1.5a8.1 8.1 0 0 0-.1 1.2c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 2 1.1l.4 2.6h4l.4-2.6a8 8 0 0 0 2-1.1l2.4 1 2-3.4-2.1-1.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
   person2:
@@ -184,12 +188,26 @@ function saveSettings() {
 }
 
 function bindStaticEvents() {
-  $$(".tab").forEach((tab) => {
-    tab.addEventListener("click", () => setActiveTab(tab.dataset.tab));
-  });
+  document.addEventListener("click", (event) => {
+    const tabTrigger = event.target.closest("[data-tab]");
+    if (tabTrigger) {
+      event.preventDefault();
+      setActiveTab(tabTrigger.dataset.tab);
+      return;
+    }
 
-  $$("[data-navigate]").forEach((button) => {
-    button.addEventListener("click", () => setActiveTab(button.dataset.navigate));
+    const navigateTrigger = event.target.closest("[data-navigate]");
+    if (navigateTrigger) {
+      event.preventDefault();
+      setActiveTab(navigateTrigger.dataset.navigate);
+      return;
+    }
+
+    const shoppingTrigger = event.target.closest("[data-complete-shopping]");
+    if (shoppingTrigger) {
+      event.preventDefault();
+      toggleShoppingComplete(shoppingTrigger.dataset.completeShopping);
+    }
   });
 
   $("#inventorySearch").addEventListener("input", (event) => {
@@ -217,11 +235,14 @@ function setActiveTab(tabName) {
   $$(".tab").forEach((tab) => {
     tab.classList.toggle("is-active", tab.dataset.tab === tabName);
   });
+  $$(".rail-link").forEach((tab) => {
+    tab.classList.toggle("is-active", tab.dataset.tab === tabName);
+  });
   $("#screenTitle").textContent = {
-    home: "ホーム",
-    inventory: "在庫",
-    shopping: "買い物",
-    settings: "設定"
+    home: "HOME",
+    inventory: "STOCK",
+    shopping: "SHOPPING",
+    settings: "SETTING"
   }[tabName];
 }
 
@@ -281,6 +302,8 @@ function renderHome() {
   const nextProduct = getNextProduct();
   const shoppingItems = getShoppingItems();
 
+  $("#inventoryCount").textContent = state.products.length;
+  $("#shoppingMetric").textContent = shoppingItems.length;
   $("#safetyScore").textContent = score;
   $("#scoreRing").style.strokeDashoffset = String(RING_LENGTH - (RING_LENGTH * score) / 100);
   $("#scoreRing").style.stroke = score >= 86 ? "var(--green)" : score >= 72 ? "var(--orange)" : "var(--red)";
@@ -327,10 +350,6 @@ function renderShopping() {
   $("#shoppingList").innerHTML = shoppingItems.length
     ? shoppingItems.map(shoppingRowTemplate).join("")
     : emptyTemplate("買い物リストは空です。");
-
-  $$("[data-complete-shopping]").forEach((button) => {
-    button.addEventListener("click", () => toggleShoppingComplete(button.dataset.completeShopping));
-  });
 }
 
 function renderSettings() {

@@ -825,6 +825,48 @@ p {
   accent-color: var(--navy);
 }
 
+.cloud-settings {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.cloud-settings label {
+  display: grid;
+  gap: 7px;
+}
+
+.cloud-settings label span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.cloud-settings input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  color: var(--navy);
+  background: rgba(255, 255, 255, 0.72);
+  outline: 0;
+}
+
+.cloud-save-button {
+  min-height: 48px;
+  border-radius: 16px;
+  color: #fff;
+  background: var(--navy);
+  font-weight: 850;
+}
+
+.cloud-status {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .empty-state {
   padding: 34px 22px;
   color: var(--muted);

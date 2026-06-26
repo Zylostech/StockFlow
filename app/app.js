@@ -1,5 +1,6 @@
 const STORAGE_KEY = "stockflow.design.v2";
 const SETTINGS_KEY = "stockflow.settings.v1";
+const CLOUD_CONFIG_KEY = "stockflow.cloud.v1";
 const RING_LENGTH = 314;
 
 const symbols = {
@@ -163,7 +164,10 @@ const futureAdapters = {
     recognize: null,
     addRecognizedProduct: null
   },
-  familySync: null,
+  familySync: {
+    pull: pullProductsFromCloud,
+    push: syncProductsToCloud
+  },
   notificationScheduler: null
 };
 
@@ -174,6 +178,7 @@ const state = {
   searchQuery: "",
   products: loadProducts(),
   settings: loadSettings(),
+  cloud: loadCloudConfig(),
   scanner: {
     detector: null,
     timer: null,
@@ -193,6 +198,7 @@ function boot() {
   setToday();
   bindStaticEvents();
   render();
+  initCloudSync();
 }
 
 function createProduct(product) {
@@ -286,7 +292,7 @@ function addProductByBarcode(barcode) {
     ];
   }
 
-  saveProducts();
+  saveProducts({ sync: true });
   render();
   setActiveTab("inventory");
   closeBarcodeScanner();
@@ -302,8 +308,11 @@ function loadProducts() {
   }
 }
 
-function saveProducts() {
+function saveProducts(options = {}) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.products));
+  if (options.sync) {
+    queueCloudSync();
+  }
 }
 
 function loadSettings() {
@@ -325,6 +334,180 @@ function loadSettings() {
 
 function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+}
+
+function loadCloudConfig() {
+  const fallback = {
+    supabaseUrl: "",
+    supabaseKey: "",
+    householdId: "family-home"
+  };
+
+  try {
+    return {
+      ...fallback,
+      ...JSON.parse(localStorage.getItem(CLOUD_CONFIG_KEY) || "{}")
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveCloudConfig() {
+  localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(state.cloud));
+}
+
+function getSupabaseClient() {
+  if (!state.cloud.supabaseUrl || !state.cloud.supabaseKey || !state.cloud.householdId) {
+    return null;
+  }
+
+  const baseUrl = state.cloud.supabaseUrl.replace(/\/$/, "");
+  const headers = {
+    apikey: state.cloud.supabaseKey,
+    Authorization: `Bearer ${state.cloud.supabaseKey}`
+  };
+
+  return {
+    async selectProducts() {
+      const params = new URLSearchParams({
+        select: "data",
+        household_id: `eq.${state.cloud.householdId}`,
+        order: "updated_at.desc"
+      });
+      const response = await fetch(`${baseUrl}/rest/v1/stockflow_products?${params}`, {
+        headers
+      });
+      return parseSupabaseResponse(response);
+    },
+    async upsertProducts(rows) {
+      const response = await fetch(
+        `${baseUrl}/rest/v1/stockflow_products?on_conflict=household_id,id`,
+        {
+          method: "POST",
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+            Prefer: "resolution=merge-duplicates"
+          },
+          body: JSON.stringify(rows)
+        }
+      );
+      return parseSupabaseResponse(response);
+    }
+  };
+}
+
+async function initCloudSync() {
+  renderCloudSettings();
+  if (!getSupabaseClient()) {
+    setCloudStatus("未接続");
+    return;
+  }
+
+  await pullProductsFromCloud();
+}
+
+async function pullProductsFromCloud() {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  setCloudStatus("クラウドから読み込み中...");
+  const { data, error } = await client.selectProducts();
+
+  if (error) {
+    setCloudStatus(`読み込みエラー: ${error.message}`);
+    return;
+  }
+
+  if (data?.length) {
+    state.products = data.map((row) => row.data);
+    saveProducts();
+    render();
+    setCloudStatus("クラウド保存: 接続済み");
+    return;
+  }
+
+  await syncProductsToCloud();
+}
+
+let cloudSyncTimer = null;
+
+function queueCloudSync() {
+  if (!getSupabaseClient()) return;
+  window.clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = window.setTimeout(syncProductsToCloud, 500);
+}
+
+async function syncProductsToCloud() {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  const rows = state.products.map((product) => ({
+    household_id: state.cloud.householdId,
+    id: product.id,
+    data: product,
+    updated_at: new Date().toISOString()
+  }));
+
+  setCloudStatus("クラウドへ保存中...");
+  const { error } = await client.upsertProducts(rows);
+
+  setCloudStatus(error ? `保存エラー: ${error.message}` : "クラウド保存: 同期済み");
+}
+
+async function parseSupabaseResponse(response) {
+  const text = await response.text();
+  let body = null;
+
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+  }
+
+  if (!response.ok) {
+    return {
+      data: null,
+      error: {
+        message:
+          body?.message ||
+          body?.hint ||
+          `Supabase API error (${response.status})`
+      }
+    };
+  }
+
+  return {
+    data: Array.isArray(body) ? body : [],
+    error: null
+  };
+}
+
+function saveCloudSettingsFromForm() {
+  state.cloud = {
+    supabaseUrl: $("#supabaseUrlInput").value.trim(),
+    supabaseKey: $("#supabaseKeyInput").value.trim(),
+    householdId: $("#householdIdInput").value.trim() || "family-home"
+  };
+  saveCloudConfig();
+  renderCloudSettings();
+  initCloudSync();
+}
+
+function renderCloudSettings() {
+  $("#supabaseUrlInput").value = state.cloud.supabaseUrl;
+  $("#supabaseKeyInput").value = state.cloud.supabaseKey;
+  $("#householdIdInput").value = state.cloud.householdId;
+}
+
+function setCloudStatus(message) {
+  const status = $("#cloudStatus");
+  if (status) {
+    status.textContent = message;
+  }
 }
 
 async function openBarcodeScanner() {
@@ -527,7 +710,8 @@ function handleAction(action) {
     "scan-barcode": openBarcodeScanner,
     "close-barcode": closeBarcodeScanner,
     "restart-barcode": restartBarcodeScanner,
-    "manual-barcode": addManualBarcode
+    "manual-barcode": addManualBarcode,
+    "save-cloud-settings": saveCloudSettingsFromForm
   };
 
   actions[action]?.();
@@ -662,6 +846,7 @@ function renderShopping() {
 function renderSettings() {
   $("#notificationToggle").checked = state.settings.notificationsEnabled;
   $("#autoListToggle").checked = state.settings.autoShoppingEnabled;
+  renderCloudSettings();
 }
 
 function groupByCategory(products) {
@@ -683,7 +868,7 @@ function toggleShoppingComplete(productId) {
       }
     };
   });
-  saveProducts();
+  saveProducts({ sync: true });
   render();
 }
 

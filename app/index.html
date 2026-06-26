@@ -228,6 +228,30 @@
               </label>
             </div>
           </section>
+
+          <section class="section-block">
+            <div class="section-heading">
+              <h2>クラウド保存</h2>
+            </div>
+            <div class="settings-group cloud-settings">
+              <label>
+                <span>Supabase URL</span>
+                <input id="supabaseUrlInput" type="url" placeholder="https://xxxx.supabase.co" autocomplete="off" />
+              </label>
+              <label>
+                <span>Anon Key</span>
+                <input id="supabaseKeyInput" type="password" placeholder="Supabase anon key" autocomplete="off" />
+              </label>
+              <label>
+                <span>家庭ID</span>
+                <input id="householdIdInput" type="text" placeholder="family-home" autocomplete="off" />
+              </label>
+              <button class="cloud-save-button" data-action="save-cloud-settings" type="button">
+                クラウド保存を有効にする
+              </button>
+              <p class="cloud-status" id="cloudStatus">未接続</p>
+            </div>
+          </section>
         </section>
       </main>
 

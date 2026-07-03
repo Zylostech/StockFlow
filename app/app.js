@@ -2,6 +2,9 @@ const STORAGE_KEY = "stockflow.design.v2";
 const SETTINGS_KEY = "stockflow.settings.v1";
 const CLOUD_CONFIG_KEY = "stockflow.cloud.v1";
 const RING_LENGTH = 314;
+const SUPABASE_URL = "https://yswkmovtcesowsdqsskx.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_0UWiXJNBT9vGbequqNvFXg_Jn-AZ7KV";
+const STOCKFLOW_HOUSEHOLD_ID = "family-home";
 
 const symbols = {
   house:
@@ -179,6 +182,14 @@ const state = {
   products: loadProducts(),
   settings: loadSettings(),
   cloud: loadCloudConfig(),
+  auth: {
+    client: null,
+    session: null,
+    user: null,
+    member: null,
+    members: [],
+    ready: false
+  },
   scanner: {
     detector: null,
     timer: null,
@@ -193,12 +204,12 @@ const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 boot();
 
-function boot() {
+async function boot() {
   hydrateSymbols(document);
   setToday();
   bindStaticEvents();
   render();
-  initCloudSync();
+  await initAuth();
 }
 
 function createProduct(product) {
@@ -337,11 +348,7 @@ function saveSettings() {
 }
 
 function loadCloudConfig() {
-  const fallback = {
-    supabaseUrl: "",
-    supabaseKey: "",
-    householdId: "family-home"
-  };
+  const fallback = getDefaultCloudConfig();
 
   try {
     return {
@@ -353,67 +360,217 @@ function loadCloudConfig() {
   }
 }
 
+function getDefaultCloudConfig() {
+  return {
+    supabaseUrl: SUPABASE_URL,
+    supabaseKey: SUPABASE_PUBLISHABLE_KEY,
+    householdId: STOCKFLOW_HOUSEHOLD_ID
+  };
+}
+
 function saveCloudConfig() {
   localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(state.cloud));
 }
 
 function getSupabaseClient() {
-  if (!state.cloud.supabaseUrl || !state.cloud.supabaseKey || !state.cloud.householdId) {
-    return null;
-  }
-
-  const baseUrl = state.cloud.supabaseUrl.replace(/\/$/, "");
-  const headers = {
-    apikey: state.cloud.supabaseKey,
-    Authorization: `Bearer ${state.cloud.supabaseKey}`
-  };
-
-  return {
-    async selectProducts() {
-      const params = new URLSearchParams({
-        select: "data",
-        household_id: `eq.${state.cloud.householdId}`,
-        order: "updated_at.desc"
-      });
-      const response = await fetch(`${baseUrl}/rest/v1/stockflow_products?${params}`, {
-        headers
-      });
-      return parseSupabaseResponse(response);
-    },
-    async upsertProducts(rows) {
-      const response = await fetch(
-        `${baseUrl}/rest/v1/stockflow_products?on_conflict=household_id,id`,
-        {
-          method: "POST",
-          headers: {
-            ...headers,
-            "Content-Type": "application/json",
-            Prefer: "resolution=merge-duplicates"
-          },
-          body: JSON.stringify(rows)
-        }
-      );
-      return parseSupabaseResponse(response);
-    }
-  };
+  return state.auth.client;
 }
 
-async function initCloudSync() {
-  renderCloudSettings();
-  if (!getSupabaseClient()) {
-    setCloudStatus("未接続");
+async function initAuth() {
+  state.cloud = getDefaultCloudConfig();
+  saveCloudConfig();
+
+  try {
+    await waitForSupabaseClient();
+    state.auth.client = window.createSupabaseClient(
+      SUPABASE_URL,
+      SUPABASE_PUBLISHABLE_KEY,
+      {
+        auth: {
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          persistSession: true
+        }
+      }
+    );
+  } catch {
+    setAuthGate(true);
+    setAuthStatus("ログイン機能を読み込めませんでした。通信状態を確認してください。");
+    setCloudStatus("ログイン機能の読み込みに失敗しました。");
     return;
   }
 
+  const { data } = await state.auth.client.auth.getSession();
+  await applySession(data.session);
+
+  state.auth.client.auth.onAuthStateChange(async (_event, session) => {
+    await applySession(session);
+  });
+}
+
+function waitForSupabaseClient() {
+  if (window.createSupabaseClient) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      window.removeEventListener("supabase-ready", onReady);
+      reject(new Error("Supabase client timeout"));
+    }, 8000);
+
+    function onReady() {
+      window.clearTimeout(timeout);
+      resolve();
+    }
+
+    window.addEventListener("supabase-ready", onReady, { once: true });
+  });
+}
+
+async function applySession(session) {
+  state.auth.session = session;
+  state.auth.user = session?.user || null;
+  state.auth.ready = true;
+
+  setAuthGate(!state.auth.user);
+  renderAuthState();
+
+  if (!state.auth.user) {
+    setCloudStatus("ログインするとクラウド保存が有効になります。");
+    return;
+  }
+
+  setCloudStatus("家族アカウントを確認しています...");
+  const member = await claimHouseholdMembership();
+
+  if (!member) {
+    setCloudStatus("このメールはStockFlow家族メンバーに登録されていません。");
+    return;
+  }
+
+  state.auth.member = member;
+  await loadFamilyMembers();
   await pullProductsFromCloud();
+  render();
+}
+
+function setAuthGate(visible) {
+  const gate = $("#authGate");
+  if (gate) {
+    gate.hidden = !visible;
+  }
+}
+
+function renderAuthState() {
+  const email = state.auth.user?.email || "未ログイン";
+  $("#authEmailLabel").textContent = email;
+  $("#familyShareStatus").textContent = state.auth.user ? "接続中" : "未ログイン";
+  $("#familyShareDetail").textContent = state.auth.user
+    ? `${email} で家族の在庫を同期しています。`
+    : "ログインすると同じ家庭の在庫を同期します。";
+  renderFamilyMembers();
+}
+
+async function sendLoginLink() {
+  const email = $("#authEmailInput").value.trim();
+
+  if (!email) {
+    setAuthStatus("メールアドレスを入力してください。");
+    return;
+  }
+
+  setAuthStatus("ログインリンクを送信しています...");
+  const { error } = await state.auth.client.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: window.location.origin + window.location.pathname
+    }
+  });
+
+  setAuthStatus(
+    error
+      ? `送信エラー: ${error.message}`
+      : "メールを送信しました。届いたリンクを開いてください。"
+  );
+}
+
+async function signOut() {
+  if (!state.auth.client) return;
+  await state.auth.client.auth.signOut();
+  state.auth.session = null;
+  state.auth.user = null;
+  state.auth.member = null;
+  state.auth.members = [];
+  setAuthGate(true);
+  renderAuthState();
+  setCloudStatus("ログアウトしました。");
+}
+
+async function claimHouseholdMembership() {
+  const client = getSupabaseClient();
+  const { data, error } = await client.rpc("stockflow_claim_household");
+
+  if (error) {
+    setCloudStatus(`家族確認エラー: ${error.message}`);
+    return null;
+  }
+
+  return data;
+}
+
+async function loadFamilyMembers() {
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from("stockflow_household_members")
+    .select("email, role, user_id")
+    .eq("household_id", STOCKFLOW_HOUSEHOLD_ID)
+    .order("role", { ascending: true });
+
+  if (!error) {
+    state.auth.members = data || [];
+  }
+}
+
+async function inviteFamilyMember() {
+  const email = $("#familyInviteEmailInput").value.trim().toLowerCase();
+
+  if (!email) {
+    setCloudStatus("追加するメールアドレスを入力してください。");
+    return;
+  }
+
+  const client = getSupabaseClient();
+  const { error } = await client
+    .from("stockflow_household_members")
+    .upsert(
+      {
+        household_id: STOCKFLOW_HOUSEHOLD_ID,
+        email,
+        role: "member"
+      },
+      { onConflict: "household_id,email" }
+    );
+
+  if (error) {
+    setCloudStatus(`家族追加エラー: ${error.message}`);
+    return;
+  }
+
+  $("#familyInviteEmailInput").value = "";
+  await loadFamilyMembers();
+  renderFamilyMembers();
+  setCloudStatus("家族メンバーを追加しました。相手も同じURLからログインできます。");
 }
 
 async function pullProductsFromCloud() {
   const client = getSupabaseClient();
-  if (!client) return;
+  if (!client || !state.auth.user) return;
 
   setCloudStatus("クラウドから読み込み中...");
-  const { data, error } = await client.selectProducts();
+  const { data, error } = await client
+    .from("stockflow_products")
+    .select("data")
+    .eq("household_id", STOCKFLOW_HOUSEHOLD_ID)
+    .order("updated_at", { ascending: false });
 
   if (error) {
     setCloudStatus(`読み込みエラー: ${error.message}`);
@@ -434,73 +591,33 @@ async function pullProductsFromCloud() {
 let cloudSyncTimer = null;
 
 function queueCloudSync() {
-  if (!getSupabaseClient()) return;
+  if (!getSupabaseClient() || !state.auth.user) return;
   window.clearTimeout(cloudSyncTimer);
   cloudSyncTimer = window.setTimeout(syncProductsToCloud, 500);
 }
 
 async function syncProductsToCloud() {
   const client = getSupabaseClient();
-  if (!client) return;
+  if (!client || !state.auth.user) return;
 
   const rows = state.products.map((product) => ({
-    household_id: state.cloud.householdId,
+    household_id: STOCKFLOW_HOUSEHOLD_ID,
     id: product.id,
     data: product,
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
+    updated_by: state.auth.user.id
   }));
 
   setCloudStatus("クラウドへ保存中...");
-  const { error } = await client.upsertProducts(rows);
+  const { error } = await client
+    .from("stockflow_products")
+    .upsert(rows, { onConflict: "household_id,id" });
 
   setCloudStatus(error ? `保存エラー: ${error.message}` : "クラウド保存: 同期済み");
 }
 
-async function parseSupabaseResponse(response) {
-  const text = await response.text();
-  let body = null;
-
-  if (text) {
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = text;
-    }
-  }
-
-  if (!response.ok) {
-    return {
-      data: null,
-      error: {
-        message:
-          body?.message ||
-          body?.hint ||
-          `Supabase API error (${response.status})`
-      }
-    };
-  }
-
-  return {
-    data: Array.isArray(body) ? body : [],
-    error: null
-  };
-}
-
-function saveCloudSettingsFromForm() {
-  state.cloud = {
-    supabaseUrl: $("#supabaseUrlInput").value.trim(),
-    supabaseKey: $("#supabaseKeyInput").value.trim(),
-    householdId: $("#householdIdInput").value.trim() || "family-home"
-  };
-  saveCloudConfig();
-  renderCloudSettings();
-  initCloudSync();
-}
-
 function renderCloudSettings() {
-  $("#supabaseUrlInput").value = state.cloud.supabaseUrl;
-  $("#supabaseKeyInput").value = state.cloud.supabaseKey;
-  $("#householdIdInput").value = state.cloud.householdId;
+  renderAuthState();
 }
 
 function setCloudStatus(message) {
@@ -508,6 +625,32 @@ function setCloudStatus(message) {
   if (status) {
     status.textContent = message;
   }
+}
+
+function setAuthStatus(message) {
+  const status = $("#authStatus");
+  if (status) {
+    status.textContent = message;
+  }
+}
+
+function renderFamilyMembers() {
+  const list = $("#familyMemberList");
+  if (!list) return;
+
+  list.innerHTML = state.auth.members.length
+    ? state.auth.members
+        .map((member) => {
+          const stateLabel = member.user_id ? "接続済み" : "招待中";
+          return `
+            <div class="family-member">
+              <span>${escapeHtml(member.email)}</span>
+              <small>${escapeHtml(member.role)} · ${stateLabel}</small>
+            </div>
+          `;
+        })
+        .join("")
+    : '<div class="empty-state">家族メンバーはまだ読み込まれていません。</div>';
 }
 
 async function openBarcodeScanner() {
@@ -711,7 +854,9 @@ function handleAction(action) {
     "close-barcode": closeBarcodeScanner,
     "restart-barcode": restartBarcodeScanner,
     "manual-barcode": addManualBarcode,
-    "save-cloud-settings": saveCloudSettingsFromForm
+    "send-login-link": sendLoginLink,
+    "invite-family-member": inviteFamilyMember,
+    "sign-out": signOut
   };
 
   actions[action]?.();

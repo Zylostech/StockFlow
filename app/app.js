@@ -1,6 +1,7 @@
 const STORAGE_KEY = "stockflow.design.v2";
 const SETTINGS_KEY = "stockflow.settings.v1";
 const CLOUD_CONFIG_KEY = "stockflow.cloud.v1";
+const PIN_KEY = "stockflow.pin.v1";
 const RING_LENGTH = 314;
 const SUPABASE_URL = "https://yswkmovtcesowsdqsskx.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_0UWiXJNBT9vGbequqNvFXg_Jn-AZ7KV";
@@ -131,7 +132,8 @@ const state = {
     user: null,
     member: null,
     members: [],
-    ready: false
+    ready: false,
+    pinUnlocked: false
   },
   scanner: {
     detector: null,
@@ -402,10 +404,12 @@ async function applySession(session) {
   state.auth.user = session?.user || null;
   state.auth.ready = true;
 
-  setAuthGate(!state.auth.user);
   renderAuthState();
 
   if (!state.auth.user) {
+    state.auth.pinUnlocked = false;
+    setAuthMode("email");
+    setAuthGate(true);
     setCloudStatus("ログインするとクラウド保存が有効になります。");
     return;
   }
@@ -422,6 +426,24 @@ async function applySession(session) {
   await loadFamilyMembers();
   await pullProductsFromCloud();
   render();
+
+  if (shouldShowPinCreate()) {
+    setAuthMode("create-pin");
+    setAuthGate(true);
+    setPinCreateStatus("次回からメールを開かずに入れるようになります。");
+    focusSoon("#pinCreateInput");
+    return;
+  }
+
+  if (shouldShowPinUnlock()) {
+    setAuthMode("pin");
+    setAuthGate(true);
+    setPinUnlockStatus("PINを入力してください。");
+    focusSoon("#pinUnlockInput");
+    return;
+  }
+
+  setAuthGate(false);
 }
 
 function setAuthGate(visible) {
@@ -429,6 +451,12 @@ function setAuthGate(visible) {
   if (gate) {
     gate.hidden = !visible;
   }
+}
+
+function setAuthMode(mode) {
+  $$("[data-auth-panel]").forEach((panel) => {
+    panel.classList.toggle("is-active", panel.dataset.authPanel === mode);
+  });
 }
 
 function renderAuthState() {
@@ -464,6 +492,116 @@ async function sendLoginLink() {
   );
 }
 
+function shouldShowPinCreate() {
+  return state.auth.user && !state.auth.pinUnlocked && !getStoredPin();
+}
+
+function shouldShowPinUnlock() {
+  return state.auth.user && !state.auth.pinUnlocked && Boolean(getStoredPin());
+}
+
+function getStoredPin() {
+  try {
+    return JSON.parse(localStorage.getItem(PIN_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+async function createPin() {
+  const input = $("#pinCreateInput");
+  const pin = sanitizePin(input.value);
+
+  if (!isValidPin(pin)) {
+    setPinCreateStatus("4桁の数字を入力してください。");
+    input.focus();
+    return;
+  }
+
+  const salt = crypto.randomUUID();
+  localStorage.setItem(
+    PIN_KEY,
+    JSON.stringify({
+      salt,
+      hash: await hashPin(pin, salt),
+      createdAt: new Date().toISOString()
+    })
+  );
+  input.value = "";
+  state.auth.pinUnlocked = true;
+  setAuthGate(false);
+  setCloudStatus("PINを設定しました。次回からすぐ開けます。");
+}
+
+function skipPin() {
+  state.auth.pinUnlocked = true;
+  setAuthGate(false);
+  setCloudStatus("PINなしで開きました。設定はあとで追加できます。");
+}
+
+async function unlockPin() {
+  const input = $("#pinUnlockInput");
+  const pin = sanitizePin(input.value);
+  const storedPin = getStoredPin();
+
+  if (!storedPin || !isValidPin(pin)) {
+    setPinUnlockStatus("4桁のPINを入力してください。");
+    input.focus();
+    return;
+  }
+
+  const hash = await hashPin(pin, storedPin.salt);
+  if (hash !== storedPin.hash) {
+    setPinUnlockStatus("PINが違います。もう一度入力してください。");
+    input.value = "";
+    input.focus();
+    return;
+  }
+
+  input.value = "";
+  state.auth.pinUnlocked = true;
+  setAuthGate(false);
+  setCloudStatus("PINでロック解除しました。");
+}
+
+async function resetPinAndLogin() {
+  localStorage.removeItem(PIN_KEY);
+  state.auth.pinUnlocked = false;
+  await signOut();
+  setAuthMode("email");
+  setAuthStatus("メールでログインし直してください。");
+}
+
+function sanitizePin(value) {
+  return String(value || "").replace(/\D/g, "").slice(0, 4);
+}
+
+function isValidPin(pin) {
+  return /^\d{4}$/.test(pin);
+}
+
+async function hashPin(pin, salt) {
+  const data = new TextEncoder().encode(`${salt}:${pin}`);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function setPinCreateStatus(message) {
+  const status = $("#pinCreateStatus");
+  if (status) status.textContent = message;
+}
+
+function setPinUnlockStatus(message) {
+  const status = $("#pinUnlockStatus");
+  if (status) status.textContent = message;
+}
+
+function focusSoon(selector) {
+  window.setTimeout(() => $(selector)?.focus(), 80);
+}
+
 async function signOut() {
   if (!state.auth.client) return;
   await state.auth.client.auth.signOut();
@@ -471,6 +609,8 @@ async function signOut() {
   state.auth.user = null;
   state.auth.member = null;
   state.auth.members = [];
+  state.auth.pinUnlocked = false;
+  setAuthMode("email");
   setAuthGate(true);
   renderAuthState();
   setCloudStatus("ログアウトしました。");
@@ -1017,6 +1157,18 @@ function bindStaticEvents() {
 
   $("#productPhotoInput").addEventListener("change", previewProductPhoto);
 
+  ["#pinCreateInput", "#pinUnlockInput"].forEach((selector) => {
+    $(selector).addEventListener("input", (event) => {
+      event.target.value = sanitizePin(event.target.value);
+    });
+    $(selector).addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        handleAction(selector === "#pinCreateInput" ? "create-pin" : "unlock-pin");
+      }
+    });
+  });
+
   $("#notificationToggle").addEventListener("change", (event) => {
     state.settings.notificationsEnabled = event.target.checked;
     saveSettings();
@@ -1054,6 +1206,10 @@ function handleAction(action) {
     "add-manual-product": addManualProduct,
     "clear-product-photo": clearProductPhoto,
     "send-login-link": sendLoginLink,
+    "create-pin": createPin,
+    "skip-pin": skipPin,
+    "unlock-pin": unlockPin,
+    "reset-pin-login": resetPinAndLogin,
     "invite-family-member": inviteFamilyMember,
     "sign-out": signOut
   };

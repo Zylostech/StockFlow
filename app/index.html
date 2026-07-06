@@ -15,19 +15,59 @@
           <span>StockFlow</span>
           <small>FAMILY STOCK ASSISTANT</small>
         </a>
-        <div>
-          <p class="welcome">PRIVATE FAMILY APP</p>
-          <h1>Sign in</h1>
-          <p>あなたと家族だけの在庫に入ります。</p>
+        <div class="auth-panel is-active" data-auth-panel="email">
+          <div>
+            <p class="welcome">PRIVATE FAMILY APP</p>
+            <h1>Sign in</h1>
+            <p>初回だけメールで本人確認します。次回からはPINで開けます。</p>
+          </div>
+          <label class="auth-field">
+            <span>メールアドレス</span>
+            <input id="authEmailInput" type="email" placeholder="you@example.com" autocomplete="email" />
+          </label>
+          <button class="auth-button" data-action="send-login-link" type="button">
+            ログインリンクを送る
+          </button>
+          <p class="auth-status" id="authStatus">メールに届くリンクからログインできます。</p>
         </div>
-        <label class="auth-field">
-          <span>メールアドレス</span>
-          <input id="authEmailInput" type="email" placeholder="you@example.com" autocomplete="email" />
-        </label>
-        <button class="auth-button" data-action="send-login-link" type="button">
-          ログインリンクを送る
-        </button>
-        <p class="auth-status" id="authStatus">メールに届くリンクからログインできます。</p>
+
+        <div class="auth-panel" data-auth-panel="create-pin">
+          <div>
+            <p class="welcome">QUICK UNLOCK</p>
+            <h1>PIN</h1>
+            <p>この端末で次回からすぐ開けるように、4桁PINを作成します。</p>
+          </div>
+          <label class="auth-field">
+            <span>4桁PIN</span>
+            <input id="pinCreateInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autocomplete="off" />
+          </label>
+          <button class="auth-button" data-action="create-pin" type="button">
+            PINを設定して開く
+          </button>
+          <button class="auth-link-button" data-action="skip-pin" type="button">
+            今はPINを使わない
+          </button>
+          <p class="auth-status" id="pinCreateStatus">PINはこの端末だけに保存されます。</p>
+        </div>
+
+        <div class="auth-panel" data-auth-panel="pin">
+          <div>
+            <p class="welcome">WELCOME BACK,</p>
+            <h1>PIN</h1>
+            <p>4桁PINでStockFlowを開きます。</p>
+          </div>
+          <label class="auth-field">
+            <span>4桁PIN</span>
+            <input id="pinUnlockInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autocomplete="off" />
+          </label>
+          <button class="auth-button" data-action="unlock-pin" type="button">
+            開く
+          </button>
+          <button class="auth-link-button" data-action="reset-pin-login" type="button">
+            PINを忘れたのでメールでログイン
+          </button>
+          <p class="auth-status" id="pinUnlockStatus">この端末のログイン状態を使います。</p>
+        </div>
       </div>
     </section>
 

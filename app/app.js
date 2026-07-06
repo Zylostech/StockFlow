@@ -166,7 +166,7 @@ function createProduct(product) {
     source: product.source || "manual",
     name: product.name,
     category: product.category || "その他",
-    imageUrl: product.imageUrl || productImages.kitchen,
+    imageUrl: normalizeImageUrl(product.imageUrl, product.source),
     quantity,
     minQuantity,
     daysLeft,
@@ -275,6 +275,14 @@ function normalizeProduct(product) {
     shopping: product.shopping,
     history: product.history
   });
+}
+
+function normalizeImageUrl(imageUrl, source) {
+  if (!imageUrl || (source === "manual" && imageUrl === productImages.kitchen)) {
+    return "";
+  }
+
+  return imageUrl;
 }
 
 function removeStarterProducts(products) {
@@ -746,13 +754,15 @@ function addManualBarcode() {
   }
 }
 
-function addManualProduct() {
+async function addManualProduct() {
   const nameInput = $("#productNameInput");
   const categoryInput = $("#productCategoryInput");
   const quantityInput = $("#productQuantityInput");
+  const photoInput = $("#productPhotoInput");
   const name = nameInput.value.trim();
   const category = categoryInput.value.trim() || "その他";
   const quantity = Math.max(0, Number(quantityInput.value || 0));
+  const imageUrl = await readProductPhoto(photoInput.files?.[0]);
 
   if (!name) {
     setCloudStatus("商品名を入力してください。");
@@ -765,7 +775,7 @@ function addManualProduct() {
   });
 
   if (existingProduct) {
-    changeProductQuantity(existingProduct.id, quantity || 1);
+    updateExistingProduct(existingProduct.id, quantity || 1, imageUrl);
   } else {
     state.products = [
       createProduct({
@@ -773,7 +783,7 @@ function addManualProduct() {
         source: "manual",
         name,
         category,
-        imageUrl: productImages.kitchen,
+        imageUrl,
         quantity,
         minQuantity: 1
       }),
@@ -786,7 +796,87 @@ function addManualProduct() {
   nameInput.value = "";
   categoryInput.value = "";
   quantityInput.value = "1";
+  clearProductPhoto();
   setCloudStatus("在庫を追加しました。");
+}
+
+function updateExistingProduct(productId, quantityToAdd, imageUrl) {
+  state.products = state.products.map((product) => {
+    if (product.id !== productId) return product;
+    const quantity = Math.max(0, product.quantity + quantityToAdd);
+    const daysLeft = estimateDaysLeft(quantity);
+    return {
+      ...product,
+      imageUrl: imageUrl || product.imageUrl,
+      quantity,
+      daysLeft,
+      nextOutDate: dateAfter(daysLeft),
+      shopping: {
+        ...product.shopping,
+        completed: false
+      },
+      history: [
+        ...(product.history || []),
+        { type: "manual-restock", delta: quantityToAdd, at: new Date().toISOString() }
+      ]
+    };
+  });
+  saveProducts({ sync: true });
+  render();
+}
+
+function readProductPhoto(file) {
+  if (!file) return Promise.resolve("");
+
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resizeImageDataUrl(reader.result, resolve));
+    reader.addEventListener("error", () => resolve(""));
+    reader.readAsDataURL(file);
+  });
+}
+
+function resizeImageDataUrl(dataUrl, resolve) {
+  const image = new Image();
+  image.addEventListener("load", () => {
+    const maxSize = 760;
+    const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    resolve(canvas.toDataURL("image/jpeg", 0.78));
+  });
+  image.addEventListener("error", () => resolve(""));
+  image.src = dataUrl;
+}
+
+function previewProductPhoto() {
+  const input = $("#productPhotoInput");
+  const preview = $("#productPhotoPreview");
+  const image = preview?.querySelector("img");
+  const file = input?.files?.[0];
+
+  if (!preview || !image) return;
+
+  if (!file) {
+    clearProductPhoto();
+    return;
+  }
+
+  image.src = URL.createObjectURL(file);
+  preview.hidden = false;
+}
+
+function clearProductPhoto() {
+  const input = $("#productPhotoInput");
+  const preview = $("#productPhotoPreview");
+  const image = preview?.querySelector("img");
+
+  if (input) input.value = "";
+  if (image) image.removeAttribute("src");
+  if (preview) preview.hidden = true;
 }
 
 function changeProductQuantity(productId, delta) {
@@ -925,6 +1015,8 @@ function bindStaticEvents() {
     renderInventory();
   });
 
+  $("#productPhotoInput").addEventListener("change", previewProductPhoto);
+
   $("#notificationToggle").addEventListener("change", (event) => {
     state.settings.notificationsEnabled = event.target.checked;
     saveSettings();
@@ -960,6 +1052,7 @@ function handleAction(action) {
     "restart-barcode": restartBarcodeScanner,
     "manual-barcode": addManualBarcode,
     "add-manual-product": addManualProduct,
+    "clear-product-photo": clearProductPhoto,
     "send-login-link": sendLoginLink,
     "invite-family-member": inviteFamilyMember,
     "sign-out": signOut
@@ -1203,6 +1296,16 @@ function shoppingRowTemplate(product) {
 function productVisualTemplate(product, className) {
   const label = categorySymbols[product.category] || categorySymbols.その他;
   const tone = getCategoryTone(product.category);
+  const imageUrl = normalizeImageUrl(product.imageUrl, product.source);
+
+  if (imageUrl) {
+    return `
+      <div class="${className} product-photo" aria-label="${escapeHtml(product.name)}の写真">
+        <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(product.name)}" loading="lazy" />
+      </div>
+    `;
+  }
+
   return `
     <div class="${className} product-mark ${tone}" aria-label="${escapeHtml(product.category)}">
       <span>${escapeHtml(label)}</span>

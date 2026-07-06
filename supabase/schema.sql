@@ -36,6 +36,10 @@ insert into stockflow_households (id, name)
 values ('family-home', 'StockFlow Home')
 on conflict (id) do nothing;
 
+delete from stockflow_products
+where household_id = 'family-home'
+  and data ->> 'source' = 'starter';
+
 alter table stockflow_households enable row level security;
 alter table stockflow_household_members enable row level security;
 alter table stockflow_products enable row level security;

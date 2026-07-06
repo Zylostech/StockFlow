@@ -34,7 +34,11 @@ const symbols = {
   bell:
     '<svg viewBox="0 0 24 24" fill="none"><path d="M18 9a6 6 0 0 0-12 0c0 7-2.5 7-2.5 8.5h17C20.5 16 18 16 18 9Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.5 20a2.8 2.8 0 0 0 5 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
   cart:
-    '<svg viewBox="0 0 24 24" fill="none"><path d="M5 6h2l1.6 8.2a2 2 0 0 0 2 1.6h6.8a2 2 0 0 0 1.9-1.4L21 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="11" cy="20" r="1.4" fill="currentColor"/><circle cx="18" cy="20" r="1.4" fill="currentColor"/></svg>'
+    '<svg viewBox="0 0 24 24" fill="none"><path d="M5 6h2l1.6 8.2a2 2 0 0 0 2 1.6h6.8a2 2 0 0 0 1.9-1.4L21 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="11" cy="20" r="1.4" fill="currentColor"/><circle cx="18" cy="20" r="1.4" fill="currentColor"/></svg>',
+  minus:
+    '<svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  trash:
+    '<svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 };
 
 const productImages = {
@@ -94,68 +98,7 @@ const categorySymbols = {
   その他: "ITEM"
 };
 
-const initialProducts = [
-  createProduct({
-    id: "toilet-paper",
-    name: "トイレットペーパー",
-    category: "紙用品",
-    imageUrl: productImages.paper,
-    quantity: 2,
-    minQuantity: 3,
-    daysLeft: 5,
-    nextOutDate: "6月28日"
-  }),
-  createProduct({
-    id: "laundry-detergent",
-    name: "洗濯洗剤",
-    category: "洗濯",
-    imageUrl: productImages.detergent,
-    quantity: 1,
-    minQuantity: 2,
-    daysLeft: 4,
-    nextOutDate: "6月27日"
-  }),
-  createProduct({
-    id: "tissue",
-    name: "ティッシュ",
-    category: "紙用品",
-    imageUrl: productImages.tissue,
-    quantity: 5,
-    minQuantity: 2,
-    daysLeft: 16,
-    nextOutDate: "7月9日"
-  }),
-  createProduct({
-    id: "diapers",
-    name: "オムツ",
-    category: "育児",
-    imageUrl: productImages.diaper,
-    quantity: 12,
-    minQuantity: 8,
-    daysLeft: 9,
-    nextOutDate: "7月2日"
-  }),
-  createProduct({
-    id: "barley-tea",
-    name: "麦茶",
-    category: "飲料",
-    imageUrl: productImages.drink,
-    quantity: 3,
-    minQuantity: 2,
-    daysLeft: 7,
-    nextOutDate: "6月30日"
-  }),
-  createProduct({
-    id: "plastic-wrap",
-    name: "ラップ",
-    category: "キッチン",
-    imageUrl: productImages.kitchen,
-    quantity: 1,
-    minQuantity: 1,
-    daysLeft: 12,
-    nextOutDate: "7月5日"
-  })
-];
+const initialProducts = [];
 
 const futureAdapters = {
   barcodeScanner: {
@@ -208,27 +151,31 @@ async function boot() {
   hydrateSymbols(document);
   setToday();
   bindStaticEvents();
+  activateTabFromHash();
   render();
   await initAuth();
 }
 
 function createProduct(product) {
+  const quantity = Number(product.quantity || 0);
+  const minQuantity = Number(product.minQuantity || 1);
+  const daysLeft = product.daysLeft ?? estimateDaysLeft(quantity);
   return {
     id: product.id || crypto.randomUUID(),
     barcode: product.barcode || "",
-    source: product.source || "starter",
+    source: product.source || "manual",
     name: product.name,
-    category: product.category,
-    imageUrl: product.imageUrl,
-    quantity: product.quantity,
-    minQuantity: product.minQuantity,
-    daysLeft: product.daysLeft,
-    nextOutDate: product.nextOutDate,
+    category: product.category || "その他",
+    imageUrl: product.imageUrl || productImages.kitchen,
+    quantity,
+    minQuantity,
+    daysLeft,
+    nextOutDate: product.nextOutDate || dateAfter(daysLeft),
     shopping: {
-      autoAdded: product.quantity <= product.minQuantity || product.daysLeft <= 6,
-      completed: false
+      autoAdded: quantity <= minQuantity || daysLeft <= 6,
+      completed: product.shopping?.completed || false
     },
-    history: []
+    history: product.history || []
   };
 }
 
@@ -313,14 +260,30 @@ function addProductByBarcode(barcode) {
 function loadProducts() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : initialProducts;
+    const products = raw ? JSON.parse(raw) : initialProducts;
+    return removeStarterProducts(products).map(normalizeProduct);
   } catch {
     return initialProducts;
   }
 }
 
+function normalizeProduct(product) {
+  return createProduct({
+    ...product,
+    id: product.id,
+    source: product.source,
+    shopping: product.shopping,
+    history: product.history
+  });
+}
+
+function removeStarterProducts(products) {
+  const list = Array.isArray(products) ? products : [];
+  return list.filter((product) => product.source !== "starter");
+}
+
 function saveProducts(options = {}) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.products));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(removeStarterProducts(state.products)));
   if (options.sync) {
     queueCloudSync();
   }
@@ -578,7 +541,7 @@ async function pullProductsFromCloud() {
   }
 
   if (data?.length) {
-    state.products = data.map((row) => row.data);
+    state.products = removeStarterProducts(data.map((row) => row.data)).map(normalizeProduct);
     saveProducts();
     render();
     setCloudStatus("クラウド保存: 接続済み");
@@ -600,7 +563,8 @@ async function syncProductsToCloud() {
   const client = getSupabaseClient();
   if (!client || !state.auth.user) return;
 
-  const rows = state.products.map((product) => ({
+  const products = removeStarterProducts(state.products);
+  const rows = products.map((product) => ({
     household_id: STOCKFLOW_HOUSEHOLD_ID,
     id: product.id,
     data: product,
@@ -609,6 +573,18 @@ async function syncProductsToCloud() {
   }));
 
   setCloudStatus("クラウドへ保存中...");
+
+  await client
+    .from("stockflow_products")
+    .delete()
+    .eq("household_id", STOCKFLOW_HOUSEHOLD_ID)
+    .eq("data->>source", "starter");
+
+  if (!rows.length) {
+    setCloudStatus("クラウド保存: 同期済み");
+    return;
+  }
+
   const { error } = await client
     .from("stockflow_products")
     .upsert(rows, { onConflict: "household_id,id" });
@@ -770,12 +746,105 @@ function addManualBarcode() {
   }
 }
 
+function addManualProduct() {
+  const nameInput = $("#productNameInput");
+  const categoryInput = $("#productCategoryInput");
+  const quantityInput = $("#productQuantityInput");
+  const name = nameInput.value.trim();
+  const category = categoryInput.value.trim() || "その他";
+  const quantity = Math.max(0, Number(quantityInput.value || 0));
+
+  if (!name) {
+    setCloudStatus("商品名を入力してください。");
+    nameInput.focus();
+    return;
+  }
+
+  const existingProduct = state.products.find((product) => {
+    return product.name === name && product.category === category;
+  });
+
+  if (existingProduct) {
+    changeProductQuantity(existingProduct.id, quantity || 1);
+  } else {
+    state.products = [
+      createProduct({
+        id: `manual-${Date.now()}`,
+        source: "manual",
+        name,
+        category,
+        imageUrl: productImages.kitchen,
+        quantity,
+        minQuantity: 1
+      }),
+      ...state.products
+    ];
+    saveProducts({ sync: true });
+    render();
+  }
+
+  nameInput.value = "";
+  categoryInput.value = "";
+  quantityInput.value = "1";
+  setCloudStatus("在庫を追加しました。");
+}
+
+function changeProductQuantity(productId, delta) {
+  if (!productId || !Number.isFinite(delta)) return;
+
+  state.products = state.products.map((product) => {
+    if (product.id !== productId) return product;
+    const quantity = Math.max(0, product.quantity + delta);
+    const daysLeft = estimateDaysLeft(quantity);
+    return {
+      ...product,
+      quantity,
+      daysLeft,
+      nextOutDate: dateAfter(daysLeft),
+      shopping: {
+        ...product.shopping,
+        completed: false
+      },
+      history: [
+        ...(product.history || []),
+        { type: delta > 0 ? "increase" : "decrease", delta, at: new Date().toISOString() }
+      ]
+    };
+  });
+  saveProducts({ sync: true });
+  render();
+}
+
+async function deleteProduct(productId) {
+  if (!productId) return;
+  state.products = state.products.filter((product) => product.id !== productId);
+  saveProducts();
+  render();
+
+  const client = getSupabaseClient();
+  if (!client || !state.auth.user) return;
+
+  setCloudStatus("クラウドから削除中...");
+  const { error } = await client
+    .from("stockflow_products")
+    .delete()
+    .eq("household_id", STOCKFLOW_HOUSEHOLD_ID)
+    .eq("id", productId);
+
+  setCloudStatus(error ? `削除エラー: ${error.message}` : "在庫を削除しました。");
+}
+
 function setScannerStatus(message) {
   $("#barcodeStatus").textContent = message;
 }
 
 function normalizeBarcode(value) {
   return String(value || "").replace(/\D/g, "");
+}
+
+function estimateDaysLeft(quantity) {
+  if (quantity <= 0) return 0;
+  return Math.max(1, quantity * 4);
 }
 
 function dateAfter(days) {
@@ -788,6 +857,23 @@ function dateAfter(days) {
 }
 
 function bindStaticEvents() {
+  $$("[data-tab]").forEach((trigger) => {
+    trigger.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveTab(trigger.dataset.tab);
+      window.history.replaceState(null, "", `#${trigger.dataset.tab}Screen`);
+    });
+  });
+
+  $$("[data-action]").forEach((trigger) => {
+    trigger.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      handleAction(trigger.dataset.action);
+    });
+  });
+
   document.addEventListener("click", (event) => {
     const tabTrigger = event.target.closest("[data-tab]");
     if (tabTrigger) {
@@ -814,6 +900,23 @@ function bindStaticEvents() {
     if (shoppingTrigger) {
       event.preventDefault();
       toggleShoppingComplete(shoppingTrigger.dataset.completeShopping);
+      return;
+    }
+
+    const quantityTrigger = event.target.closest("[data-quantity-change]");
+    if (quantityTrigger) {
+      event.preventDefault();
+      changeProductQuantity(
+        quantityTrigger.dataset.productId,
+        Number(quantityTrigger.dataset.quantityChange)
+      );
+      return;
+    }
+
+    const deleteTrigger = event.target.closest("[data-delete-product]");
+    if (deleteTrigger) {
+      event.preventDefault();
+      deleteProduct(deleteTrigger.dataset.deleteProduct);
     }
   });
 
@@ -844,6 +947,8 @@ function bindStaticEvents() {
       closeBarcodeScanner();
     }
   });
+
+  window.addEventListener("hashchange", activateTabFromHash);
 }
 
 function handleAction(action) {
@@ -854,6 +959,7 @@ function handleAction(action) {
     "close-barcode": closeBarcodeScanner,
     "restart-barcode": restartBarcodeScanner,
     "manual-barcode": addManualBarcode,
+    "add-manual-product": addManualProduct,
     "send-login-link": sendLoginLink,
     "invite-family-member": inviteFamilyMember,
     "sign-out": signOut
@@ -863,6 +969,10 @@ function handleAction(action) {
 }
 
 function setActiveTab(tabName) {
+  if (!["home", "inventory", "shopping", "settings"].includes(tabName)) {
+    tabName = "home";
+  }
+
   closeQuickActions();
   state.activeTab = tabName;
   $$(".screen").forEach((screen) => {
@@ -880,6 +990,11 @@ function setActiveTab(tabName) {
     shopping: "SHOPPING",
     settings: "SETTING"
   }[tabName];
+}
+
+function activateTabFromHash() {
+  const tabName = window.location.hash.replace("#", "").replace(/Screen$/, "") || "home";
+  setActiveTab(tabName);
 }
 
 function setToday() {
@@ -1056,7 +1171,16 @@ function inventoryRowTemplate(product) {
         <strong>${escapeHtml(product.name)}</strong>
         <small>${escapeHtml(product.category)} · あと${product.daysLeft}日</small>
       </div>
-      <span class="quantity-pill">${product.quantity}個</span>
+      <div class="quantity-control" aria-label="${escapeHtml(product.name)}の個数">
+        <button data-quantity-change="-1" data-product-id="${product.id}" type="button" aria-label="${escapeHtml(product.name)}を1個減らす">
+          <span class="sf-symbol" data-symbol="minus"></span>
+        </button>
+        <span>${product.quantity}個</span>
+        <button data-quantity-change="1" data-product-id="${product.id}" type="button" aria-label="${escapeHtml(product.name)}を1個増やす">
+          <span class="sf-symbol" data-symbol="plus"></span>
+        </button>
+        <button class="delete-product-button" data-delete-product="${product.id}" type="button" aria-label="${escapeHtml(product.name)}を削除">削除</button>
+      </div>
     </article>
   `;
 }

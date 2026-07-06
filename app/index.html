@@ -34,27 +34,27 @@
     <div class="app-frame">
       <aside class="brand-rail" aria-label="StockFlow">
         <div>
-          <a class="logo" href="#home" data-tab="home" aria-label="StockFlow ホーム">
+          <a class="logo" href="#homeScreen" data-tab="home" aria-label="StockFlow ホーム">
             <span>StockFlow</span>
             <small>INVENTORY SYSTEM</small>
           </a>
           <nav class="rail-nav" aria-label="サイドナビゲーション">
-            <button class="rail-link is-active" data-tab="home" type="button">
+            <a class="rail-link is-active" data-tab="home" href="#homeScreen">
               <span class="sf-symbol" data-symbol="house"></span>
               HOME
-            </button>
-            <button class="rail-link" data-tab="inventory" type="button">
+            </a>
+            <a class="rail-link" data-tab="inventory" href="#inventoryScreen">
               <span class="sf-symbol" data-symbol="shippingbox"></span>
               STOCK
-            </button>
-            <button class="rail-link" data-tab="shopping" type="button">
+            </a>
+            <a class="rail-link" data-tab="shopping" href="#shoppingScreen">
               <span class="sf-symbol" data-symbol="checklist"></span>
               SHOPPING
-            </button>
-            <button class="rail-link" data-tab="settings" type="button">
+            </a>
+            <a class="rail-link" data-tab="settings" href="#settingsScreen">
               <span class="sf-symbol" data-symbol="gear"></span>
               SETTING
-            </button>
+            </a>
           </nav>
         </div>
         <div class="profile-chip">
@@ -68,15 +68,15 @@
 
       <main class="app-shell">
         <header class="app-header">
-          <a class="mobile-logo" href="#home" data-tab="home" aria-label="StockFlow ホーム">
+          <a class="mobile-logo" href="#homeScreen" data-tab="home" aria-label="StockFlow ホーム">
             <span>StockFlow</span>
             <small>INVENTORY SYSTEM</small>
           </a>
           <div class="header-tools">
             <span class="today-pill" id="todayLabel">Today</span>
-            <button class="round-tool" data-tab="settings" type="button" aria-label="設定">
+            <a class="round-tool" data-tab="settings" href="#settingsScreen" aria-label="設定">
               <span class="sf-symbol" data-symbol="gear"></span>
-            </button>
+            </a>
           </div>
         </header>
 
@@ -95,6 +95,14 @@
               <div class="leaf leaf-one"></div>
               <div class="leaf leaf-two"></div>
               <div class="leaf leaf-three"></div>
+              <div class="hero-card-icon">
+                <span class="sf-symbol" data-symbol="shippingbox"></span>
+              </div>
+              <div class="hero-card-copy">
+                <strong>StockFlow</strong>
+                <small>必要なものを、必要なときに。</small>
+                <small>在庫管理をもっとシンプルに。</small>
+              </div>
               <p class="vertical-copy">KEEP THINGS ORGANIZED.</p>
               <p class="year-mark">20<br />25</p>
             </section>
@@ -177,6 +185,25 @@
               バーコードで追加
             </button>
           </div>
+          <section class="manual-product-card" aria-label="在庫を手入力で追加">
+            <div class="manual-product-grid">
+              <label>
+                <span>商品名</span>
+                <input id="productNameInput" type="text" placeholder="例: トイレットペーパー" autocomplete="off" />
+              </label>
+              <label>
+                <span>カテゴリ</span>
+                <input id="productCategoryInput" type="text" placeholder="例: 日用品" autocomplete="off" />
+              </label>
+              <label>
+                <span>個数</span>
+                <input id="productQuantityInput" type="number" min="0" inputmode="numeric" value="1" />
+              </label>
+            </div>
+            <button class="manual-product-button" data-action="add-manual-product" type="button">
+              在庫に追加
+            </button>
+          </section>
           <div class="search-wrap">
             <span class="sf-symbol" data-symbol="search"></span>
             <input id="inventorySearch" type="search" placeholder="商品を検索" autocomplete="off" />
@@ -282,22 +309,22 @@
       </main>
 
       <nav class="tabbar" aria-label="画面切り替え">
-        <button class="tab is-active" id="homeTab" data-tab="home" type="button">
+        <a class="tab is-active" id="homeTab" data-tab="home" href="#homeScreen">
           <span class="sf-symbol" data-symbol="house"></span>
           <span>ホーム</span>
-        </button>
-        <button class="tab" id="inventoryTab" data-tab="inventory" type="button">
+        </a>
+        <a class="tab" id="inventoryTab" data-tab="inventory" href="#inventoryScreen">
           <span class="sf-symbol" data-symbol="shippingbox"></span>
           <span>在庫</span>
-        </button>
-        <button class="tab" id="shoppingTab" data-tab="shopping" type="button">
+        </a>
+        <a class="tab" id="shoppingTab" data-tab="shopping" href="#shoppingScreen">
           <span class="sf-symbol" data-symbol="checklist"></span>
           <span>買い物</span>
-        </button>
-        <button class="tab" id="settingsTab" data-tab="settings" type="button">
+        </a>
+        <a class="tab" id="settingsTab" data-tab="settings" href="#settingsScreen">
           <span class="sf-symbol" data-symbol="gear"></span>
           <span>設定</span>
-        </button>
+        </a>
       </nav>
     </div>
 

@@ -134,7 +134,9 @@ const state = {
     member: null,
     members: [],
     ready: false,
-    pinUnlocked: false
+    pinUnlocked: false,
+    loginCooldownTimer: null,
+    loginCooldownUntil: 0
   },
   scanner: {
     detector: null,
@@ -488,6 +490,11 @@ function renderAuthState() {
 }
 
 async function sendLoginLink() {
+  if (isLoginCooldownActive()) {
+    renderLoginCooldown();
+    return;
+  }
+
   const email = $("#authEmailInput").value.trim();
 
   if (!email) {
@@ -495,6 +502,7 @@ async function sendLoginLink() {
     return;
   }
 
+  setLoginButtonDisabled(true, "送信中...");
   setAuthStatus("ログインリンクを送信しています...");
   const { error } = await state.auth.client.auth.signInWithOtp({
     email,
@@ -503,11 +511,14 @@ async function sendLoginLink() {
     }
   });
 
-  setAuthStatus(
-    error
-      ? `送信エラー: ${error.message}`
-      : "メールを送信しました。届いたリンクを開くと、次回から自動でログイン状態を復元します。"
-  );
+  if (error) {
+    setAuthStatus(formatAuthError(error));
+    startLoginCooldown(60);
+    return;
+  }
+
+  setAuthStatus("メールを送信しました。届いたリンクを開くと、次回から自動でログイン状態を復元します。");
+  startLoginCooldown(60);
 }
 
 function shouldShowPinCreate() {
@@ -517,6 +528,10 @@ function shouldShowPinCreate() {
 function shouldShowPinUnlock() {
   const storedPin = getStoredPin();
   return state.auth.user && !state.auth.pinUnlocked && Boolean(storedPin?.hash);
+}
+
+function shouldSkipPin() {
+  return Boolean(getStoredPin()?.skipped);
 }
 
 function getStoredPin() {
@@ -548,7 +563,7 @@ async function createPin() {
   );
   input.value = "";
   state.auth.pinUnlocked = true;
-  setAuthGate(false);
+  openUnlockedApp();
   setCloudStatus("PINを設定しました。次回からすぐ開けます。");
 }
 
@@ -561,7 +576,7 @@ function skipPin() {
       createdAt: new Date().toISOString()
     })
   );
-  setAuthGate(false);
+  openUnlockedApp();
   setCloudStatus("PINなしで開きました。設定はあとで追加できます。");
 }
 
@@ -586,8 +601,33 @@ async function unlockPin() {
 
   input.value = "";
   state.auth.pinUnlocked = true;
-  setAuthGate(false);
+  openUnlockedApp();
   setCloudStatus("PINでロック解除しました。");
+}
+
+function openUnlockedApp() {
+  setAuthGate(false);
+  setActiveTab("inventory");
+  window.history.replaceState(null, "", "#inventoryScreen");
+}
+
+function toggleQuickUnlock(enabled) {
+  if (enabled) {
+    localStorage.setItem(
+      PIN_KEY,
+      JSON.stringify({
+        skipped: true,
+        createdAt: new Date().toISOString()
+      })
+    );
+    state.auth.pinUnlocked = true;
+    setCloudStatus("この端末では次回からPINなしで開きます。");
+    return;
+  }
+
+  localStorage.removeItem(PIN_KEY);
+  state.auth.pinUnlocked = false;
+  setCloudStatus("PIN省略をオフにしました。次回はPIN作成画面が出ます。");
 }
 
 async function resetPinAndLogin() {
@@ -626,6 +666,51 @@ function setPinUnlockStatus(message) {
 
 function focusSoon(selector) {
   window.setTimeout(() => $(selector)?.focus(), 80);
+}
+
+function setLoginButtonDisabled(disabled, label) {
+  const button = $("#loginLinkButton");
+  if (!button) return;
+  button.disabled = disabled;
+  if (label) button.textContent = label;
+}
+
+function startLoginCooldown(seconds) {
+  state.auth.loginCooldownUntil = Date.now() + seconds * 1000;
+  window.clearInterval(state.auth.loginCooldownTimer);
+  renderLoginCooldown();
+  state.auth.loginCooldownTimer = window.setInterval(renderLoginCooldown, 1000);
+}
+
+function isLoginCooldownActive() {
+  return Date.now() < state.auth.loginCooldownUntil;
+}
+
+function renderLoginCooldown() {
+  const remaining = Math.max(0, Math.ceil((state.auth.loginCooldownUntil - Date.now()) / 1000));
+
+  if (remaining <= 0) {
+    window.clearInterval(state.auth.loginCooldownTimer);
+    state.auth.loginCooldownTimer = null;
+    setLoginButtonDisabled(false, "ログインリンクを送る");
+    return;
+  }
+
+  setLoginButtonDisabled(true, `${remaining}秒後に再送信`);
+}
+
+function formatAuthError(error) {
+  const message = String(error?.message || "");
+
+  if (/rate limit|too many|email rate limit/i.test(message)) {
+    return "短時間に何度も送信されました。60秒待ってからもう一度お試しください。";
+  }
+
+  if (/invalid email/i.test(message)) {
+    return "メールアドレスの形式を確認してください。";
+  }
+
+  return `送信エラー: ${message || "時間を置いてもう一度お試しください。"}`;
 }
 
 async function signOut() {
@@ -1270,6 +1355,11 @@ function bindStaticEvents() {
     render();
   });
 
+  $("#quickUnlockToggle").addEventListener("change", (event) => {
+    toggleQuickUnlock(event.target.checked);
+    renderSettings();
+  });
+
   $("#barcodeDialog").addEventListener("close", stopBarcodeScanner);
   $("#quickActionsDialog").addEventListener("click", (event) => {
     if (event.target === $("#quickActionsDialog")) {
@@ -1446,6 +1536,7 @@ function renderShopping() {
 function renderSettings() {
   $("#notificationToggle").checked = state.settings.notificationsEnabled;
   $("#autoListToggle").checked = state.settings.autoShoppingEnabled;
+  $("#quickUnlockToggle").checked = shouldSkipPin();
   renderCloudSettings();
 }
 

@@ -33,13 +33,13 @@
           <div>
             <p class="welcome">PRIVATE FAMILY APP</p>
             <h1>Sign in</h1>
-            <p>初回だけメールで本人確認します。次回からはPINで開けます。</p>
+            <p>初回・機種変更・ログアウト時だけ必要です。普段はPINまたは自動ログインで開けます。</p>
           </div>
           <label class="auth-field">
             <span>メールアドレス</span>
             <input id="authEmailInput" type="email" placeholder="you@example.com" autocomplete="email" />
           </label>
-          <button class="auth-button" data-action="send-login-link" type="button">
+          <button class="auth-button" id="loginLinkButton" data-action="send-login-link" type="button">
             ログインリンクを送る
           </button>
           <p class="auth-status" id="authStatus">メールに届くリンクからログインできます。</p>
@@ -59,7 +59,7 @@
             PINを設定して開く
           </button>
           <button class="auth-link-button" data-action="skip-pin" type="button">
-            今はPINを使わない
+            この端末ではPINなしですぐ開く
           </button>
           <p class="auth-status" id="pinCreateStatus">PINはこの端末だけに保存されます。</p>
         </div>
@@ -373,6 +373,16 @@
               <button class="secondary-account-button" data-action="copy-share-invite" type="button">
                 共有案内をコピー
               </button>
+              <label class="settings-row switch-row quick-unlock-row">
+                <span class="settings-icon blue">
+                  <span class="sf-symbol" data-symbol="check"></span>
+                </span>
+                <span>
+                  <strong>この端末ではPINなしですぐ開く</strong>
+                  <small>ログイン状態が残っている時だけ、PIN入力を省略します。</small>
+                </span>
+                <input id="quickUnlockToggle" type="checkbox" />
+              </label>
               <div class="family-list" id="familyMemberList"></div>
               <button class="secondary-account-button" data-action="sign-out" type="button">
                 ログアウト

@@ -23,7 +23,7 @@
       ]
     },
     {
-      "source": "/icon-512.png",
+      "source": "/:path*.png",
       "headers": [
         {
           "key": "Content-Type",
@@ -32,7 +32,7 @@
       ]
     },
     {
-      "source": "/icon.svg",
+      "source": "/:path*.svg",
       "headers": [
         {
           "key": "Content-Type",

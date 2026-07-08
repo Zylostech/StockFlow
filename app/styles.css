@@ -158,6 +158,22 @@ p {
   font-weight: 850;
 }
 
+.auth-loader {
+  width: 42px;
+  height: 42px;
+  margin: 2px auto;
+  border: 3px solid rgba(9, 24, 39, 0.1);
+  border-top-color: var(--navy);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .auth-link-button {
   justify-self: center;
   min-height: 34px;
@@ -1057,6 +1073,43 @@ body:has(#settingsScreen:target) .rail-link[href="#settingsScreen"] {
 
 .settings-row {
   grid-template-columns: 52px 1fr auto;
+}
+
+.share-code-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.share-code-panel strong,
+.share-code-panel small {
+  display: block;
+}
+
+.share-code-panel strong {
+  color: var(--navy);
+  font-size: 15px;
+}
+
+.share-code-panel small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.share-code-panel code {
+  padding: 9px 12px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--navy);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .inventory-row + .inventory-row,

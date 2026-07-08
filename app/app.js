@@ -2,6 +2,7 @@ const STORAGE_KEY = "stockflow.design.v2";
 const SETTINGS_KEY = "stockflow.settings.v1";
 const CLOUD_CONFIG_KEY = "stockflow.cloud.v1";
 const PIN_KEY = "stockflow.pin.v1";
+const SHARE_CODE = "FAMILY-HOME";
 const RING_LENGTH = 314;
 const SUPABASE_URL = "https://yswkmovtcesowsdqsskx.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_0UWiXJNBT9vGbequqNvFXg_Jn-AZ7KV";
@@ -137,6 +138,8 @@ const state = {
   },
   scanner: {
     detector: null,
+    reader: null,
+    controls: null,
     timer: null,
     stream: null,
     active: false,
@@ -155,7 +158,18 @@ async function boot() {
   bindStaticEvents();
   activateTabFromHash();
   render();
+  registerServiceWorker();
   await initAuth();
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {
+      // The app still works without offline shell caching.
+    });
+  });
 }
 
 function createProduct(product) {
@@ -352,6 +366,8 @@ function getSupabaseClient() {
 async function initAuth() {
   state.cloud = getDefaultCloudConfig();
   saveCloudConfig();
+  setAuthMode("loading");
+  setAuthGate(true);
 
   try {
     await waitForSupabaseClient();
@@ -367,6 +383,7 @@ async function initAuth() {
       }
     );
   } catch {
+    setAuthMode("email");
     setAuthGate(true);
     setAuthStatus("ログイン機能を読み込めませんでした。通信状態を確認してください。");
     setCloudStatus("ログイン機能の読み込みに失敗しました。");
@@ -426,23 +443,7 @@ async function applySession(session) {
   await loadFamilyMembers();
   await pullProductsFromCloud();
   render();
-
-  if (shouldShowPinCreate()) {
-    setAuthMode("create-pin");
-    setAuthGate(true);
-    setPinCreateStatus("次回からメールを開かずに入れるようになります。");
-    focusSoon("#pinCreateInput");
-    return;
-  }
-
-  if (shouldShowPinUnlock()) {
-    setAuthMode("pin");
-    setAuthGate(true);
-    setPinUnlockStatus("PINを入力してください。");
-    focusSoon("#pinUnlockInput");
-    return;
-  }
-
+  state.auth.pinUnlocked = true;
   setAuthGate(false);
 }
 
@@ -464,8 +465,9 @@ function renderAuthState() {
   $("#authEmailLabel").textContent = email;
   $("#familyShareStatus").textContent = state.auth.user ? "接続中" : "未ログイン";
   $("#familyShareDetail").textContent = state.auth.user
-    ? `${email} で家族の在庫を同期しています。`
+    ? `${email} で家族の在庫を同期しています。共有コードは ${SHARE_CODE} です。`
     : "ログインすると同じ家庭の在庫を同期します。";
+  $("#familyShareCode").textContent = SHARE_CODE;
   renderFamilyMembers();
 }
 
@@ -488,7 +490,7 @@ async function sendLoginLink() {
   setAuthStatus(
     error
       ? `送信エラー: ${error.message}`
-      : "メールを送信しました。届いたリンクを開いてください。"
+      : "メールを送信しました。届いたリンクを開くと、次回から自動でログイン状態を復元します。"
   );
 }
 
@@ -672,6 +674,18 @@ async function inviteFamilyMember() {
   setCloudStatus("家族メンバーを追加しました。相手も同じURLからログインできます。");
 }
 
+async function copyShareInvite() {
+  const url = window.location.origin + window.location.pathname;
+  const message = `StockFlowの共有案内です。\n\n1. このURLを開く\n${url}\n\n2. メールでログイン\n\n3. 共有コード: ${SHARE_CODE}\n\n先に設定画面で妻のメールアドレスを追加しておくと、同じ在庫を見られます。`;
+
+  try {
+    await navigator.clipboard.writeText(message);
+    setCloudStatus("共有案内をコピーしました。メッセージで送れます。");
+  } catch {
+    setCloudStatus(`共有コードは ${SHARE_CODE} です。URLと一緒に送ってください。`);
+  }
+}
+
 async function pullProductsFromCloud() {
   const client = getSupabaseClient();
   if (!client || !state.auth.user) return;
@@ -790,34 +804,82 @@ async function openBarcodeScanner() {
     return;
   }
 
-  if (!("BarcodeDetector" in window)) {
-    setScannerStatus("このブラウザは自動バーコード検出に未対応です。番号入力を使ってください。");
+  try {
+    const video = $("#barcodeVideo");
+    state.scanner.active = true;
+    await startBarcodeDecoding(video, getBarcodeVideoConstraints());
+  } catch (error) {
+    setScannerStatus("カメラを起動できませんでした。Safariのカメラ許可を確認するか、下の番号入力を使ってください。");
+  }
+}
+
+function getBarcodeVideoConstraints() {
+  return {
+    video: {
+      facingMode: { ideal: "environment" },
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    },
+    audio: false
+  };
+}
+
+async function startBarcodeDecoding(video, constraints) {
+  const BarcodeReader = await waitForBarcodeReader();
+
+  if (BarcodeReader) {
+    setScannerStatus("バーコードを枠の中に入れてください。");
+    state.scanner.reader ||= new BarcodeReader();
+    $(".scanner-view").classList.add("is-live");
+    state.scanner.controls = await state.scanner.reader.decodeFromConstraints(
+      constraints,
+      video,
+      (result) => {
+        const code = result?.getText?.();
+        if (code && code !== state.scanner.lastCode) {
+          state.scanner.lastCode = code;
+          setScannerStatus(`読み取りました: ${code}`);
+          addProductByBarcode(code);
+        }
+      }
+    );
     return;
   }
 
-  try {
-    state.scanner.detector ||= new BarcodeDetector({
-      formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"]
-    });
-    state.scanner.stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: "environment" },
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      },
-      audio: false
-    });
-
-    const video = $("#barcodeVideo");
+  if ("BarcodeDetector" in window) {
+    state.scanner.stream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = state.scanner.stream;
     await video.play();
     $(".scanner-view").classList.add("is-live");
-    state.scanner.active = true;
+    state.scanner.detector ||= new BarcodeDetector({
+      formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"]
+    });
     setScannerStatus("バーコードを枠の中に入れてください。");
     scanBarcodeFrame();
-  } catch (error) {
-    setScannerStatus("カメラを起動できませんでした。Safariのカメラ許可を確認してください。");
+    return;
   }
+
+  setScannerStatus("このブラウザでは自動読み取りを読み込めませんでした。下の番号入力で追加できます。");
+}
+
+function waitForBarcodeReader() {
+  if (window.StockFlowBarcodeReader) {
+    return Promise.resolve(window.StockFlowBarcodeReader);
+  }
+
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(() => {
+      window.removeEventListener("barcode-reader-ready", onReady);
+      resolve(null);
+    }, 5000);
+
+    function onReady() {
+      window.clearTimeout(timeout);
+      resolve(window.StockFlowBarcodeReader || null);
+    }
+
+    window.addEventListener("barcode-reader-ready", onReady, { once: true });
+  });
 }
 
 function openQuickActions() {
@@ -855,6 +917,10 @@ async function scanBarcodeFrame() {
 
 function stopBarcodeScanner() {
   state.scanner.active = false;
+  if (state.scanner.controls) {
+    state.scanner.controls.stop();
+    state.scanner.controls = null;
+  }
   if (state.scanner.timer) {
     window.clearTimeout(state.scanner.timer);
     state.scanner.timer = null;
@@ -1210,6 +1276,7 @@ function handleAction(action) {
     "skip-pin": skipPin,
     "unlock-pin": unlockPin,
     "reset-pin-login": resetPinAndLogin,
+    "copy-share-invite": copyShareInvite,
     "invite-family-member": inviteFamilyMember,
     "sign-out": signOut
   };

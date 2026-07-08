@@ -1,8 +1,12 @@
 create table if not exists stockflow_households (
   id text primary key,
   name text not null,
+  share_code text,
   created_at timestamptz not null default now()
 );
+
+alter table stockflow_households
+  add column if not exists share_code text;
 
 create table if not exists stockflow_household_members (
   household_id text not null references stockflow_households (id) on delete cascade,
@@ -32,9 +36,18 @@ create index if not exists stockflow_products_household_id_idx
 create index if not exists stockflow_members_user_id_idx
   on stockflow_household_members (user_id);
 
+create unique index if not exists stockflow_households_share_code_idx
+  on stockflow_households (share_code)
+  where share_code is not null;
+
 insert into stockflow_households (id, name)
 values ('family-home', 'StockFlow Home')
 on conflict (id) do nothing;
+
+update stockflow_households
+set share_code = 'FAMILY-HOME'
+where id = 'family-home'
+  and share_code is null;
 
 delete from stockflow_products
 where household_id = 'family-home'

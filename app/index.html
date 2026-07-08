@@ -3,19 +3,33 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#f7f1e9" />
+    <meta name="theme-color" content="#fbfaf7" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="StockFlow" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="apple-touch-icon" href="./icon-512.png" />
     <link rel="manifest" href="./manifest.json" />
     <link rel="stylesheet" href="./styles.css" />
     <title>StockFlow</title>
   </head>
   <body>
-    <section class="auth-gate" id="authGate" hidden>
+    <section class="auth-gate" id="authGate">
       <div class="auth-card">
         <a class="logo auth-logo" href="#home" aria-label="StockFlow">
           <span>StockFlow</span>
           <small>FAMILY STOCK ASSISTANT</small>
         </a>
-        <div class="auth-panel is-active" data-auth-panel="email">
+        <div class="auth-panel is-active" data-auth-panel="loading">
+          <div>
+            <p class="welcome">STOCKFLOW</p>
+            <h1>Loading</h1>
+            <p>ログイン状態を確認しています。</p>
+          </div>
+          <div class="auth-loader" aria-hidden="true"></div>
+          <p class="auth-status">すでにログイン済みなら、そのままホームを開きます。</p>
+        </div>
+
+        <div class="auth-panel" data-auth-panel="email">
           <div>
             <p class="welcome">PRIVATE FAMILY APP</p>
             <h1>Sign in</h1>
@@ -297,6 +311,13 @@
                 </span>
                 <span class="status-pill" id="familyShareStatus">未ログイン</span>
               </div>
+              <div class="share-code-panel">
+                <span>
+                  <strong>共有コード</strong>
+                  <small>奥さんにはこのコードとURLを伝えるだけでOKです。</small>
+                </span>
+                <code id="familyShareCode">FAMILY-HOME</code>
+              </div>
             </div>
           </section>
 
@@ -348,6 +369,9 @@
               </label>
               <button class="cloud-save-button" data-action="invite-family-member" type="button">
                 家族メンバーを追加
+              </button>
+              <button class="secondary-account-button" data-action="copy-share-invite" type="button">
+                共有案内をコピー
               </button>
               <div class="family-list" id="familyMemberList"></div>
               <button class="secondary-account-button" data-action="sign-out" type="button">
@@ -444,7 +468,7 @@
           <div class="scanner-placeholder" id="scannerPlaceholder">
             <span class="sf-symbol" data-symbol="barcode"></span>
             <strong>カメラを起動します</strong>
-            <small>iPhoneではカメラの許可が必要です。</small>
+            <small>iPhoneではSafariまたはホーム画面アプリのカメラ許可が必要です。</small>
           </div>
         </div>
 
@@ -476,6 +500,11 @@
       import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
       window.createSupabaseClient = createClient;
       window.dispatchEvent(new Event("supabase-ready"));
+    </script>
+    <script type="module">
+      import { BrowserMultiFormatReader } from "https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.1/+esm";
+      window.StockFlowBarcodeReader = BrowserMultiFormatReader;
+      window.dispatchEvent(new Event("barcode-reader-ready"));
     </script>
     <script defer src="./app.js"></script>
   </body>

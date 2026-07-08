@@ -35,6 +35,10 @@
             <h1>Sign in</h1>
             <p>初回・機種変更・ログアウト時だけ必要です。普段はPINまたは自動ログインで開けます。</p>
           </div>
+          <div class="auth-hint" id="standaloneLoginHint" hidden>
+            <strong>ホーム画面アプリでは初回だけ別ログインが必要です。</strong>
+            <small>メールリンクがSafariで開いてしまう場合は、メール内のリンクをコピーして下に貼り付けてください。</small>
+          </div>
           <label class="auth-field">
             <span>メールアドレス</span>
             <input id="authEmailInput" type="email" placeholder="you@example.com" autocomplete="email" />
@@ -42,6 +46,16 @@
           <button class="auth-button" id="loginLinkButton" data-action="send-login-link" type="button">
             ログインリンクを送る
           </button>
+          <details class="auth-link-helper">
+            <summary>メールリンクをアプリ内で開く</summary>
+            <label class="auth-field">
+              <span>メールに届いたログインリンク</span>
+              <input id="magicLinkInput" type="url" placeholder="https://...supabase.co/auth/v1/verify?..." autocomplete="off" />
+            </label>
+            <button class="auth-secondary-button" data-action="open-pasted-login-link" type="button">
+              このアプリでログインする
+            </button>
+          </details>
           <p class="auth-status" id="authStatus">メールに届くリンクからログインできます。</p>
         </div>
 

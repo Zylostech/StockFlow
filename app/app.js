@@ -158,6 +158,7 @@ async function boot() {
   hydrateSymbols(document);
   setToday();
   bindStaticEvents();
+  renderStandaloneLoginHint();
   activateTabFromHash();
   render();
   registerServiceWorker();
@@ -476,6 +477,20 @@ function setAuthMode(mode) {
   $$("[data-auth-panel]").forEach((panel) => {
     panel.classList.toggle("is-active", panel.dataset.authPanel === mode);
   });
+  renderStandaloneLoginHint();
+}
+
+function renderStandaloneLoginHint() {
+  const hint = $("#standaloneLoginHint");
+  if (!hint) return;
+  hint.hidden = !isStandaloneApp();
+}
+
+function isStandaloneApp() {
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    window.navigator.standalone === true
+  );
 }
 
 function renderAuthState() {
@@ -517,8 +532,41 @@ async function sendLoginLink() {
     return;
   }
 
-  setAuthStatus("メールを送信しました。届いたリンクを開くと、次回から自動でログイン状態を復元します。");
+  setAuthStatus(
+    isStandaloneApp()
+      ? "メールを送信しました。リンクがSafariで開く場合は、リンクをコピーして「メールリンクをアプリ内で開く」に貼ってください。"
+      : "メールを送信しました。届いたリンクを開くと、次回から自動でログイン状態を復元します。"
+  );
   startLoginCooldown(60);
+}
+
+function openPastedLoginLink() {
+  const input = $("#magicLinkInput");
+  const link = input.value.trim();
+
+  if (!link) {
+    setAuthStatus("メールに届いたログインリンクを貼り付けてください。");
+    input.focus();
+    return;
+  }
+
+  let url;
+  try {
+    url = new URL(link);
+  } catch {
+    setAuthStatus("ログインリンクの形式を確認してください。");
+    input.focus();
+    return;
+  }
+
+  if (!url.hostname.includes("supabase.co") && url.origin !== window.location.origin) {
+    setAuthStatus("StockFlowのログインリンクではない可能性があります。メールのリンクをそのまま貼ってください。");
+    input.focus();
+    return;
+  }
+
+  setAuthStatus("このアプリ内でログインリンクを開きます...");
+  window.location.href = link;
 }
 
 function shouldShowPinCreate() {
@@ -1386,6 +1434,7 @@ function handleAction(action) {
     "add-manual-product": addManualProduct,
     "clear-product-photo": clearProductPhoto,
     "send-login-link": sendLoginLink,
+    "open-pasted-login-link": openPastedLoginLink,
     "create-pin": createPin,
     "skip-pin": skipPin,
     "unlock-pin": unlockPin,

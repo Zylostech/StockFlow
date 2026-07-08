@@ -2,6 +2,8 @@ const STORAGE_KEY = "stockflow.design.v2";
 const SETTINGS_KEY = "stockflow.settings.v1";
 const CLOUD_CONFIG_KEY = "stockflow.cloud.v1";
 const PIN_KEY = "stockflow.pin.v1";
+const FAMILY_PASSCODE_KEY = "stockflow.familyPasscode.v1";
+const DEFAULT_FAMILY_PASSCODE = "1234";
 const SHARE_CODE = "FAMILY-HOME";
 const RING_LENGTH = 314;
 const SUPABASE_URL = "https://yswkmovtcesowsdqsskx.supabase.co";
@@ -134,6 +136,7 @@ const state = {
     member: null,
     members: [],
     ready: false,
+    familyUnlocked: false,
     pinUnlocked: false,
     loginCooldownTimer: null,
     loginCooldownUntil: 0
@@ -162,6 +165,9 @@ async function boot() {
   activateTabFromHash();
   render();
   registerServiceWorker();
+  setAuthMode("family-passcode");
+  setAuthGate(true);
+  focusSoon("#familyPasscodeInput");
   await initAuth();
 }
 
@@ -369,8 +375,6 @@ function getSupabaseClient() {
 async function initAuth() {
   state.cloud = getDefaultCloudConfig();
   saveCloudConfig();
-  setAuthMode("loading");
-  setAuthGate(true);
 
   try {
     await waitForSupabaseClient();
@@ -386,9 +390,7 @@ async function initAuth() {
       }
     );
   } catch {
-    setAuthMode("email");
-    setAuthGate(true);
-    setAuthStatus("ログイン機能を読み込めませんでした。通信状態を確認してください。");
+    setFamilyPasscodeStatus("家族パスコードで利用できます。クラウド同期は通信復帰後に確認します。");
     setCloudStatus("ログイン機能の読み込みに失敗しました。");
     return;
   }
@@ -427,10 +429,7 @@ async function applySession(session) {
   renderAuthState();
 
   if (!state.auth.user) {
-    state.auth.pinUnlocked = false;
-    setAuthMode("email");
-    setAuthGate(true);
-    setCloudStatus("ログインするとクラウド保存が有効になります。");
+    setCloudStatus("管理者ログインするとクラウド保存が有効になります。");
     return;
   }
 
@@ -447,23 +446,9 @@ async function applySession(session) {
   await pullProductsFromCloud();
   render();
 
-  if (shouldShowPinCreate()) {
-    setAuthMode("create-pin");
-    setAuthGate(true);
-    setPinCreateStatus("次回からメールを開かずに、PINだけで開けます。");
-    focusSoon("#pinCreateInput");
-    return;
+  if (state.auth.familyUnlocked) {
+    setAuthGate(false);
   }
-
-  if (shouldShowPinUnlock()) {
-    setAuthMode("pin");
-    setAuthGate(true);
-    setPinUnlockStatus("ログイン状態は残っています。PINで開いてください。");
-    focusSoon("#pinUnlockInput");
-    return;
-  }
-
-  setAuthGate(false);
 }
 
 function setAuthGate(visible) {
@@ -567,6 +552,63 @@ function openPastedLoginLink() {
 
   setAuthStatus("このアプリ内でログインリンクを開きます...");
   window.location.href = link;
+}
+
+function getFamilyPasscode() {
+  return localStorage.getItem(FAMILY_PASSCODE_KEY) || DEFAULT_FAMILY_PASSCODE;
+}
+
+function unlockFamilyPasscode() {
+  const input = $("#familyPasscodeInput");
+  const passcode = sanitizePin(input.value);
+
+  if (passcode !== getFamilyPasscode()) {
+    setFamilyPasscodeStatus("パスコードが違います。4桁の家族パスコードを入力してください。");
+    input.value = "";
+    input.focus();
+    return;
+  }
+
+  input.value = "";
+  state.auth.familyUnlocked = true;
+  openUnlockedApp();
+  setCloudStatus(
+    state.auth.user
+      ? "クラウド保存: 接続済み"
+      : "家族パスコードで利用中。クラウド同期は管理者ログイン後に有効になります。"
+  );
+}
+
+function saveFamilyPasscode() {
+  const input = $("#familyPasscodeSettingInput");
+  const passcode = sanitizePin(input.value);
+
+  if (!isValidPin(passcode)) {
+    setFamilyPasscodeSettingStatus("4桁の数字を入力してください。");
+    input.focus();
+    return;
+  }
+
+  localStorage.setItem(FAMILY_PASSCODE_KEY, passcode);
+  input.value = "";
+  setFamilyPasscodeSettingStatus("家族パスコードを変更しました。次回からこの4桁で開けます。");
+}
+
+function openAdminLogin() {
+  setAuthMode("email");
+  setAuthGate(true);
+  setAuthStatus("管理者ログインは、クラウド同期や家族メンバー追加が必要な時だけ使います。");
+  focusSoon("#authEmailInput");
+}
+
+function closeAuthGate() {
+  if (state.auth.familyUnlocked) {
+    setAuthGate(false);
+    return;
+  }
+
+  setAuthMode("family-passcode");
+  focusSoon("#familyPasscodeInput");
 }
 
 function shouldShowPinCreate() {
@@ -712,6 +754,16 @@ function setPinUnlockStatus(message) {
   if (status) status.textContent = message;
 }
 
+function setFamilyPasscodeStatus(message) {
+  const status = $("#familyPasscodeStatus");
+  if (status) status.textContent = message;
+}
+
+function setFamilyPasscodeSettingStatus(message) {
+  const status = $("#familyPasscodeSettingStatus");
+  if (status) status.textContent = message;
+}
+
 function focusSoon(selector) {
   window.setTimeout(() => $(selector)?.focus(), 80);
 }
@@ -769,10 +821,9 @@ async function signOut() {
   state.auth.member = null;
   state.auth.members = [];
   state.auth.pinUnlocked = false;
-  setAuthMode("email");
-  setAuthGate(true);
+  setAuthGate(false);
   renderAuthState();
-  setCloudStatus("ログアウトしました。");
+  setCloudStatus("管理者ログインを解除しました。家族パスコードでは引き続き使えます。");
 }
 
 async function claimHouseholdMembership() {
@@ -1380,14 +1431,19 @@ function bindStaticEvents() {
 
   $("#productPhotoInput").addEventListener("change", previewProductPhoto);
 
-  ["#pinCreateInput", "#pinUnlockInput"].forEach((selector) => {
+  [
+    ["#familyPasscodeInput", "unlock-family-passcode"],
+    ["#familyPasscodeSettingInput", "save-family-passcode"],
+    ["#pinCreateInput", "create-pin"],
+    ["#pinUnlockInput", "unlock-pin"]
+  ].forEach(([selector, action]) => {
     $(selector).addEventListener("input", (event) => {
       event.target.value = sanitizePin(event.target.value);
     });
     $(selector).addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        handleAction(selector === "#pinCreateInput" ? "create-pin" : "unlock-pin");
+        handleAction(action);
       }
     });
   });
@@ -1433,6 +1489,10 @@ function handleAction(action) {
     "manual-barcode": addManualBarcode,
     "add-manual-product": addManualProduct,
     "clear-product-photo": clearProductPhoto,
+    "unlock-family-passcode": unlockFamilyPasscode,
+    "save-family-passcode": saveFamilyPasscode,
+    "open-admin-login": openAdminLogin,
+    "close-auth": closeAuthGate,
     "send-login-link": sendLoginLink,
     "open-pasted-login-link": openPastedLoginLink,
     "create-pin": createPin,

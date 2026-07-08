@@ -1,4 +1,4 @@
-const STOCKFLOW_CACHE = "stockflow-shell-v1";
+const STOCKFLOW_CACHE = "stockflow-shell-v2";
 const STOCKFLOW_ASSETS = [
   "/",
   "/index.html",
@@ -37,7 +37,7 @@ self.addEventListener("fetch", (event) => {
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      const network = fetch(event.request)
+      return fetch(event.request)
         .then((response) => {
           if (response.ok) {
             const copy = response.clone();
@@ -46,8 +46,6 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(() => cached);
-
-      return cached || network;
     })
   );
 });

@@ -19,7 +19,23 @@
           <span>StockFlow</span>
           <small>FAMILY STOCK ASSISTANT</small>
         </a>
-        <div class="auth-panel is-active" data-auth-panel="loading">
+        <div class="auth-panel is-active" data-auth-panel="family-passcode">
+          <div>
+            <p class="welcome">FAMILY PASSCODE</p>
+            <h1>StockFlow</h1>
+            <p>家族パスコードで、すぐ在庫一覧を開きます。</p>
+          </div>
+          <label class="auth-field passcode-field">
+            <span>4桁の家族パスコード</span>
+            <input id="familyPasscodeInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="1234" autocomplete="off" />
+          </label>
+          <button class="auth-button" data-action="unlock-family-passcode" type="button">
+            在庫を開く
+          </button>
+          <p class="auth-status" id="familyPasscodeStatus">初期パスコードは 1234 です。</p>
+        </div>
+
+        <div class="auth-panel" data-auth-panel="loading">
           <div>
             <p class="welcome">STOCKFLOW</p>
             <h1>Loading</h1>
@@ -56,6 +72,9 @@
               このアプリでログインする
             </button>
           </details>
+          <button class="auth-link-button" data-action="close-auth" type="button">
+            家族パスコード画面へ戻る
+          </button>
           <p class="auth-status" id="authStatus">メールに届くリンクからログインできます。</p>
         </div>
 
@@ -365,7 +384,23 @@
 
           <section class="section-block">
             <div class="section-heading">
-              <h2>アカウント</h2>
+              <h2>家族パスコード</h2>
+            </div>
+            <div class="settings-group cloud-settings">
+              <label>
+                <span>新しい4桁パスコード</span>
+                <input id="familyPasscodeSettingInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="例: 1234" autocomplete="off" />
+              </label>
+              <button class="cloud-save-button" data-action="save-family-passcode" type="button">
+                家族パスコードを変更
+              </button>
+              <p class="cloud-status" id="familyPasscodeSettingStatus">家族全員がこの4桁で開けます。</p>
+            </div>
+          </section>
+
+          <section class="section-block">
+            <div class="section-heading">
+              <h2>管理者ログイン</h2>
             </div>
             <div class="settings-group cloud-settings">
               <div class="account-panel">
@@ -377,6 +412,9 @@
                   <small id="cloudStatus">ログインするとクラウド保存が有効になります。</small>
                 </span>
               </div>
+              <button class="cloud-save-button" data-action="open-admin-login" type="button">
+                メールで管理者ログイン
+              </button>
               <label>
                 <span>妻のメールアドレス</span>
                 <input id="familyInviteEmailInput" type="email" placeholder="wife@example.com" autocomplete="email" />

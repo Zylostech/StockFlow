@@ -443,7 +443,23 @@ async function applySession(session) {
   await loadFamilyMembers();
   await pullProductsFromCloud();
   render();
-  state.auth.pinUnlocked = true;
+
+  if (shouldShowPinCreate()) {
+    setAuthMode("create-pin");
+    setAuthGate(true);
+    setPinCreateStatus("次回からメールを開かずに、PINだけで開けます。");
+    focusSoon("#pinCreateInput");
+    return;
+  }
+
+  if (shouldShowPinUnlock()) {
+    setAuthMode("pin");
+    setAuthGate(true);
+    setPinUnlockStatus("ログイン状態は残っています。PINで開いてください。");
+    focusSoon("#pinUnlockInput");
+    return;
+  }
+
   setAuthGate(false);
 }
 
@@ -499,7 +515,8 @@ function shouldShowPinCreate() {
 }
 
 function shouldShowPinUnlock() {
-  return state.auth.user && !state.auth.pinUnlocked && Boolean(getStoredPin());
+  const storedPin = getStoredPin();
+  return state.auth.user && !state.auth.pinUnlocked && Boolean(storedPin?.hash);
 }
 
 function getStoredPin() {
@@ -537,6 +554,13 @@ async function createPin() {
 
 function skipPin() {
   state.auth.pinUnlocked = true;
+  localStorage.setItem(
+    PIN_KEY,
+    JSON.stringify({
+      skipped: true,
+      createdAt: new Date().toISOString()
+    })
+  );
   setAuthGate(false);
   setCloudStatus("PINなしで開きました。設定はあとで追加できます。");
 }

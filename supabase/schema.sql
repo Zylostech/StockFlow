@@ -49,10 +49,6 @@ set share_code = 'FAMILY-HOME'
 where id = 'family-home'
   and share_code is null;
 
-delete from stockflow_products
-where household_id = 'family-home'
-  and data ->> 'source' = 'starter';
-
 alter table stockflow_households enable row level security;
 alter table stockflow_household_members enable row level security;
 alter table stockflow_products enable row level security;

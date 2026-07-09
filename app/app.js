@@ -45,6 +45,8 @@ const symbols = {
     '<svg viewBox="0 0 24 24" fill="none"><path d="M5 6h2l1.6 8.2a2 2 0 0 0 2 1.6h6.8a2 2 0 0 0 1.9-1.4L21 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="11" cy="20" r="1.4" fill="currentColor"/><circle cx="18" cy="20" r="1.4" fill="currentColor"/></svg>',
   minus:
     '<svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  pencil:
+    '<svg viewBox="0 0 24 24" fill="none"><path d="m4 20 4.4-1 10.2-10.2a2 2 0 0 0 0-2.8l-.6-.6a2 2 0 0 0-2.8 0L5 15.6 4 20Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m13.5 7.1 3.4 3.4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
   trash:
     '<svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 };
@@ -153,6 +155,10 @@ const state = {
     stream: null,
     active: false,
     lastCode: ""
+  },
+  update: {
+    worker: null,
+    reloading: false
   }
 };
 
@@ -178,11 +184,52 @@ async function boot() {
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
 
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => {
+  window.addEventListener("load", async () => {
+    try {
+      const registration = await navigator.serviceWorker.register("./sw.js");
+
+      if (registration.waiting && navigator.serviceWorker.controller) {
+        showUpdateBanner(registration.waiting);
+      }
+
+      registration.addEventListener("updatefound", () => {
+        const worker = registration.installing;
+        if (!worker) return;
+
+        worker.addEventListener("statechange", () => {
+          if (worker.state === "installed" && navigator.serviceWorker.controller) {
+            showUpdateBanner(worker);
+          }
+        });
+      });
+
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (state.update.reloading) return;
+        state.update.reloading = true;
+        window.location.reload();
+      });
+    } catch {
       // The app still works without offline shell caching.
-    });
+    }
   });
+}
+
+function showUpdateBanner(worker) {
+  state.update.worker = worker;
+  const banner = $("#updateBanner");
+  if (banner) banner.hidden = false;
+}
+
+function applyAppUpdate() {
+  const banner = $("#updateBanner");
+  if (banner) banner.hidden = true;
+
+  if (state.update.worker) {
+    state.update.worker.postMessage({ type: "SKIP_WAITING" });
+    return;
+  }
+
+  window.location.reload();
 }
 
 function createProduct(product) {
@@ -199,6 +246,8 @@ function createProduct(product) {
     imageUrl: normalizeImageUrl(product.imageUrl, product.source),
     quantity,
     minQuantity,
+    memo: product.memo || "",
+    expiryDate: product.expiryDate || product.deadline || "",
     daysLeft,
     nextOutDate: product.nextOutDate || dateAfter(daysLeft),
     updatedAt,
@@ -302,6 +351,8 @@ function cleanProductText(value) {
 }
 
 async function addProductByBarcode(barcode) {
+  if (!requireCloudSave()) return null;
+
   const normalized = normalizeBarcode(barcode);
   if (!normalized) {
     setScannerStatus("バーコード番号を入力してください。");
@@ -507,7 +558,12 @@ async function applySession(session) {
   renderAuthState();
 
   if (!state.auth.user) {
-    setCloudStatus("端末のみ保存中です。アプリ削除でも残すには管理者ログインが必要です。");
+    state.auth.member = null;
+    state.auth.members = [];
+    setCloudStatus("未ログインです。在庫を消さずに使うには初回だけ管理者ログインが必要です。");
+    if (state.auth.familyUnlocked) {
+      requireCloudSave();
+    }
     return;
   }
 
@@ -516,6 +572,11 @@ async function applySession(session) {
 
   if (!member) {
     setCloudStatus("このメールはStockFlow家族メンバーに登録されていません。");
+    if (state.auth.familyUnlocked) {
+      setAuthMode("email");
+      setAuthGate(true);
+      setAuthStatus("このメールは家族スペースに登録されていません。オーナーに追加してもらってください。");
+    }
     return;
   }
 
@@ -525,8 +586,25 @@ async function applySession(session) {
   render();
 
   if (state.auth.familyUnlocked) {
-    setAuthGate(false);
+    openUnlockedApp();
   }
+}
+
+function isCloudWritable() {
+  return Boolean(state.auth.ready && state.auth.user && state.auth.member);
+}
+
+function requireCloudSave() {
+  if (isCloudWritable()) return true;
+
+  setAuthMode(state.auth.ready ? "email" : "loading");
+  setAuthGate(true);
+  setAuthStatus(
+    "在庫データを消さないため、初回だけ管理者ログインが必要です。ログイン後はSupabaseに保存され、アプリを削除しても復元できます。"
+  );
+  setCloudStatus("Supabaseに接続してから在庫を保存します。端末保存だけでは在庫操作できません。");
+  focusSoon(state.auth.ready ? "#authEmailInput" : "#familyPasscodeInput");
+  return false;
 }
 
 function setAuthGate(visible) {
@@ -649,12 +727,18 @@ function unlockFamilyPasscode() {
 
   input.value = "";
   state.auth.familyUnlocked = true;
+
+  if (!state.auth.ready) {
+    setAuthMode("loading");
+    setAuthGate(true);
+    setFamilyPasscodeStatus("ログイン状態を確認しています。");
+    return;
+  }
+
+  if (!requireCloudSave()) return;
+
   openUnlockedApp();
-  setCloudStatus(
-    state.auth.user
-      ? "クラウド保存: 接続済み"
-      : "端末のみ保存中です。アプリ削除でも残すには設定から管理者ログインしてください。"
-  );
+  setCloudStatus("クラウド保存: 接続済み");
 }
 
 function saveFamilyPasscode() {
@@ -675,7 +759,7 @@ function saveFamilyPasscode() {
 function openAdminLogin() {
   setAuthMode("email");
   setAuthGate(true);
-  setAuthStatus("管理者ログインは、クラウド同期や家族メンバー追加が必要な時だけ使います。");
+  setAuthStatus("初回・機種変更・ログアウト時だけ必要です。ログイン後の在庫はSupabaseに保存されます。");
   focusSoon("#authEmailInput");
 }
 
@@ -899,9 +983,13 @@ async function signOut() {
   state.auth.member = null;
   state.auth.members = [];
   state.auth.pinUnlocked = false;
-  setAuthGate(false);
+  state.products = [];
+  saveProducts();
+  setAuthMode("family-passcode");
+  setAuthGate(true);
   renderAuthState();
-  setCloudStatus("管理者ログインを解除しました。家族パスコードでは引き続き使えます。");
+  render();
+  setCloudStatus("ログアウトしました。在庫を使うには初回ログインが必要です。");
 }
 
 async function claimHouseholdMembership() {
@@ -930,6 +1018,8 @@ async function loadFamilyMembers() {
 }
 
 async function inviteFamilyMember() {
+  if (!requireCloudSave()) return;
+
   const email = $("#familyInviteEmailInput").value.trim().toLowerCase();
 
   if (!email) {
@@ -990,22 +1080,29 @@ async function pullProductsFromCloud() {
 
   if (data?.length) {
     const cloudProducts = removeStarterProducts(data.map((row) => row.data)).map(normalizeProduct);
-    state.products = mergeProductsForCloud(state.products, cloudProducts);
+    state.products = cloudProducts;
     saveProducts();
     render();
     setCloudStatus("クラウド保存: 接続済み。アプリを削除しても復元できます。");
-    await syncProductsToCloud();
     return;
   }
 
+  if (!state.products.length) {
+    saveProducts();
+    render();
+    setCloudStatus("クラウド保存: 接続済み。まだ在庫は登録されていません。");
+    return;
+  }
+
+  setCloudStatus("端末に残っていた在庫をSupabaseへ移行しています...");
   await syncProductsToCloud();
 }
 
 let cloudSyncTimer = null;
 
 function queueCloudSync() {
-  if (!getSupabaseClient() || !state.auth.user) {
-    setCloudStatus("端末のみ保存中です。アプリ削除でも残すには管理者ログインしてください。");
+  if (!isCloudWritable()) {
+    setCloudStatus("未ログインのため保存していません。初回だけ管理者ログインしてください。");
     return;
   }
   window.clearTimeout(cloudSyncTimer);
@@ -1014,7 +1111,7 @@ function queueCloudSync() {
 
 async function syncProductsToCloud() {
   const client = getSupabaseClient();
-  if (!client || !state.auth.user) return;
+  if (!client || !isCloudWritable()) return;
 
   const products = removeStarterProducts(state.products);
   const rows = products.map((product) => ({
@@ -1102,6 +1199,8 @@ function renderFamilyMembers() {
 }
 
 async function openBarcodeScanner() {
+  if (!requireCloudSave()) return;
+
   closeQuickActions();
   const dialog = $("#barcodeDialog");
   dialog.showModal();
@@ -1270,6 +1369,8 @@ function addManualBarcode() {
 }
 
 async function addManualProduct() {
+  if (!requireCloudSave()) return;
+
   const nameInput = $("#productNameInput");
   const categoryInput = $("#productCategoryInput");
   const quantityInput = $("#productQuantityInput");
@@ -1317,6 +1418,8 @@ async function addManualProduct() {
 }
 
 function updateExistingProduct(productId, quantityToAdd, imageUrl) {
+  if (!requireCloudSave()) return;
+
   state.products = state.products.map((product) => {
     if (product.id !== productId) return product;
     const quantity = Math.max(0, product.quantity + quantityToAdd);
@@ -1396,8 +1499,140 @@ function clearProductPhoto() {
   if (preview) preview.hidden = true;
 }
 
+function openProductEditor(productId) {
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) return;
+
+  $("#editProductId").value = product.id;
+  $("#editProductName").value = product.name || "";
+  $("#editProductCategory").value = product.category || "";
+  $("#editProductQuantity").value = String(product.quantity ?? 0);
+  $("#editProductBulkAdd").value = "";
+  $("#editProductMinQuantity").value = String(product.minQuantity ?? 0);
+  $("#editProductMemo").value = product.memo || "";
+  $("#editProductExpiryDate").value = product.expiryDate || "";
+  $("#editProductBarcode").value = product.barcode || "";
+  $("#editProductPhotoInput").value = "";
+  setEditProductPreview(product.imageUrl);
+
+  const dialog = $("#productEditDialog");
+  dialog.showModal();
+  hydrateSymbols(dialog);
+  focusSoon("#editProductName");
+}
+
+function closeProductEditor() {
+  const dialog = $("#productEditDialog");
+  if (dialog?.open) dialog.close();
+}
+
+function setEditProductPreview(imageUrl) {
+  const preview = $("#editProductPhotoPreview");
+  const image = preview?.querySelector("img");
+
+  if (!preview || !image) return;
+  preview.removeAttribute("data-cleared");
+
+  if (imageUrl) {
+    image.src = imageUrl;
+    preview.hidden = false;
+    return;
+  }
+
+  image.removeAttribute("src");
+  preview.hidden = true;
+}
+
+function previewEditProductPhoto() {
+  const input = $("#editProductPhotoInput");
+  const file = input?.files?.[0];
+
+  if (!file) {
+    const product = state.products.find((item) => item.id === $("#editProductId")?.value);
+    setEditProductPreview(product?.imageUrl || "");
+    return;
+  }
+
+  const preview = $("#editProductPhotoPreview");
+  const image = preview?.querySelector("img");
+  if (!preview || !image) return;
+  image.src = URL.createObjectURL(file);
+  preview.hidden = false;
+}
+
+function clearEditProductPhoto() {
+  const input = $("#editProductPhotoInput");
+  if (input) input.value = "";
+  setEditProductPreview("");
+  $("#editProductPhotoPreview")?.setAttribute("data-cleared", "true");
+}
+
+async function saveProductEdit() {
+  if (!requireCloudSave()) return;
+
+  const productId = $("#editProductId").value;
+  const existingProduct = state.products.find((item) => item.id === productId);
+  if (!existingProduct) return;
+
+  const name = $("#editProductName").value.trim();
+  const category = $("#editProductCategory").value.trim() || "その他";
+  const quantity = Math.max(0, Number($("#editProductQuantity").value || 0));
+  const bulkAdd = Math.max(0, Number($("#editProductBulkAdd").value || 0));
+  const minQuantity = Math.max(0, Number($("#editProductMinQuantity").value || 0));
+  const memo = $("#editProductMemo").value.trim();
+  const expiryDate = $("#editProductExpiryDate").value;
+  const barcode = normalizeBarcode($("#editProductBarcode").value);
+  const photoInput = $("#editProductPhotoInput");
+  const clearedPhoto = $("#editProductPhotoPreview")?.dataset.cleared === "true";
+  const imageUrl = await readProductPhoto(photoInput.files?.[0]);
+
+  if (!name) {
+    setCloudStatus("商品名を入力してください。");
+    $("#editProductName").focus();
+    return;
+  }
+
+  const nextQuantity = quantity + bulkAdd;
+  const daysLeft = estimateDaysLeft(nextQuantity);
+  const nextImageUrl = imageUrl || (clearedPhoto ? "" : existingProduct.imageUrl);
+
+  state.products = state.products.map((product) => {
+    if (product.id !== productId) return product;
+
+    return {
+      ...product,
+      name,
+      category,
+      quantity: nextQuantity,
+      minQuantity,
+      memo,
+      expiryDate,
+      barcode,
+      imageUrl: nextImageUrl,
+      daysLeft,
+      nextOutDate: dateAfter(daysLeft),
+      updatedAt: new Date().toISOString(),
+      shopping: {
+        ...product.shopping,
+        completed: false
+      },
+      history: [
+        ...(product.history || []),
+        { type: "edit", bulkAdd, at: new Date().toISOString() }
+      ]
+    };
+  });
+
+  $("#editProductPhotoPreview")?.removeAttribute("data-cleared");
+  saveProducts({ sync: true });
+  render();
+  closeProductEditor();
+  setCloudStatus("在庫を更新しました。Supabaseへ保存しています。");
+}
+
 function changeProductQuantity(productId, delta) {
   if (!productId || !Number.isFinite(delta)) return;
+  if (!requireCloudSave()) return;
 
   state.products = state.products.map((product) => {
     if (product.id !== productId) return product;
@@ -1425,6 +1660,8 @@ function changeProductQuantity(productId, delta) {
 
 async function deleteProduct(productId) {
   if (!productId) return;
+  if (!requireCloudSave()) return;
+
   state.products = state.products.filter((product) => product.id !== productId);
   saveProducts();
   render();
@@ -1525,6 +1762,13 @@ function bindStaticEvents() {
       return;
     }
 
+    const editTrigger = event.target.closest("[data-edit-product]");
+    if (editTrigger) {
+      event.preventDefault();
+      openProductEditor(editTrigger.dataset.editProduct);
+      return;
+    }
+
     const deleteTrigger = event.target.closest("[data-delete-product]");
     if (deleteTrigger) {
       event.preventDefault();
@@ -1538,6 +1782,7 @@ function bindStaticEvents() {
   });
 
   $("#productPhotoInput").addEventListener("change", previewProductPhoto);
+  $("#editProductPhotoInput").addEventListener("change", previewEditProductPhoto);
 
   [
     ["#familyPasscodeInput", "unlock-family-passcode"],
@@ -1573,6 +1818,11 @@ function bindStaticEvents() {
   });
 
   $("#barcodeDialog").addEventListener("close", stopBarcodeScanner);
+  $("#productEditDialog").addEventListener("click", (event) => {
+    if (event.target === $("#productEditDialog")) {
+      closeProductEditor();
+    }
+  });
   $("#quickActionsDialog").addEventListener("click", (event) => {
     if (event.target === $("#quickActionsDialog")) {
       closeQuickActions();
@@ -1597,6 +1847,10 @@ function handleAction(action) {
     "manual-barcode": addManualBarcode,
     "add-manual-product": addManualProduct,
     "clear-product-photo": clearProductPhoto,
+    "close-product-edit": closeProductEditor,
+    "save-product-edit": saveProductEdit,
+    "clear-edit-product-photo": clearEditProductPhoto,
+    "apply-app-update": applyAppUpdate,
     "unlock-family-passcode": unlockFamilyPasscode,
     "save-family-passcode": saveFamilyPasscode,
     "open-admin-login": openAdminLogin,
@@ -1766,6 +2020,8 @@ function groupByCategory(products) {
 }
 
 function toggleShoppingComplete(productId) {
+  if (!requireCloudSave()) return;
+
   state.products = state.products.map((product) => {
     if (product.id !== productId) return product;
     return {
@@ -1814,13 +2070,19 @@ function categoryTemplate(category, products) {
 }
 
 function inventoryRowTemplate(product) {
+  const detailLines = [
+    `在庫: ${product.quantity}個 · 最終更新: ${formatProductDate(product.updatedAt)}`,
+    product.expiryDate ? `期限: ${formatProductDate(product.expiryDate)}` : "",
+    product.memo ? `メモ: ${product.memo}` : ""
+  ].filter(Boolean);
+
   return `
     <article class="inventory-row">
       ${productVisualTemplate(product, "row-image")}
       <div class="row-copy">
         <strong>${escapeHtml(product.name)}</strong>
         <small>${escapeHtml(product.category)}</small>
-        <small>在庫: ${product.quantity}個 · 最終更新: ${formatProductDate(product.updatedAt)}</small>
+        ${detailLines.map((line) => `<small>${escapeHtml(line)}</small>`).join("")}
       </div>
       <div class="quantity-control" aria-label="${escapeHtml(product.name)}の個数">
         <button data-quantity-change="-1" data-product-id="${product.id}" type="button" aria-label="${escapeHtml(product.name)}を1個減らす">
@@ -1830,6 +2092,7 @@ function inventoryRowTemplate(product) {
         <button data-quantity-change="1" data-product-id="${product.id}" type="button" aria-label="${escapeHtml(product.name)}を1個増やす">
           <span class="sf-symbol" data-symbol="plus"></span>
         </button>
+        <button class="edit-product-button" data-edit-product="${product.id}" type="button" aria-label="${escapeHtml(product.name)}を編集">編集</button>
         <button class="delete-product-button" data-delete-product="${product.id}" type="button" aria-label="${escapeHtml(product.name)}を削除">削除</button>
       </div>
     </article>

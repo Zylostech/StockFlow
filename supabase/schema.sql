@@ -33,6 +33,9 @@ alter table stockflow_products
 create index if not exists stockflow_products_household_id_idx
   on stockflow_products (household_id);
 
+create index if not exists stockflow_products_data_gin_idx
+  on stockflow_products using gin (data);
+
 create index if not exists stockflow_members_user_id_idx
   on stockflow_household_members (user_id);
 
@@ -194,3 +197,9 @@ end;
 $$;
 
 grant execute on function public.stockflow_claim_household() to authenticated;
+
+comment on table stockflow_products is
+  'StockFlow inventory source of truth. The data jsonb stores name, category, quantity, minQuantity, memo, expiryDate, barcode, imageUrl, shopping, and history.';
+
+comment on column stockflow_products.household_id is
+  'Family space identifier. RLS only allows authenticated members of this household to read or change rows.';

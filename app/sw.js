@@ -1,4 +1,4 @@
-const STOCKFLOW_CACHE = "stockflow-shell-v5";
+const STOCKFLOW_CACHE = "stockflow-shell-v6";
 const STOCKFLOW_ASSETS = [
   "/",
   "/index.html",
@@ -13,7 +13,6 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(STOCKFLOW_CACHE).then((cache) => cache.addAll(STOCKFLOW_ASSETS))
   );
-  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
@@ -27,6 +26,12 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
@@ -35,17 +40,32 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  const shouldRefreshFirst =
+    event.request.mode === "navigate" ||
+    ["script", "style", "document"].includes(event.request.destination);
+
+  if (shouldRefreshFirst) {
+    event.respondWith(fetchAndUpdate(event.request));
+    return;
+  }
+
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return fetch(event.request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            caches.open(STOCKFLOW_CACHE).then((cache) => cache.put(event.request, copy));
-          }
-          return response;
-        })
-        .catch(() => cached);
-    })
+    caches.match(event.request).then((cached) => cached || fetchAndUpdate(event.request))
   );
 });
+
+function fetchAndUpdate(request) {
+  return fetch(request)
+    .then((response) => {
+      if (response.ok) {
+        const copy = response.clone();
+        caches.open(STOCKFLOW_CACHE).then((cache) => cache.put(request, copy));
+      }
+      return response;
+    })
+    .catch(() =>
+      caches.match(request).then((cached) => {
+        return cached || new Response("Offline", { status: 503, statusText: "Offline" });
+      })
+    );
+}

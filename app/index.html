@@ -511,6 +511,72 @@
       </section>
     </dialog>
 
+    <dialog class="scanner-dialog edit-dialog" id="productEditDialog">
+      <section class="scanner-sheet edit-sheet" aria-labelledby="productEditTitle">
+        <div class="scanner-grabber"></div>
+        <div class="scanner-head">
+          <div>
+            <p class="welcome">EDIT STOCK</p>
+            <h2 id="productEditTitle">在庫を編集</h2>
+          </div>
+          <button class="scanner-close" data-action="close-product-edit" type="button" aria-label="閉じる">
+            <span class="sf-symbol" data-symbol="xmark"></span>
+          </button>
+        </div>
+
+        <input id="editProductId" type="hidden" />
+        <div class="edit-product-grid">
+          <label>
+            <span>商品名</span>
+            <input id="editProductName" type="text" autocomplete="off" />
+          </label>
+          <label>
+            <span>カテゴリ</span>
+            <input id="editProductCategory" type="text" autocomplete="off" />
+          </label>
+          <label>
+            <span>在庫数</span>
+            <input id="editProductQuantity" type="number" min="0" inputmode="numeric" />
+          </label>
+          <label>
+            <span>まとめて追加</span>
+            <input id="editProductBulkAdd" type="number" min="0" inputmode="numeric" placeholder="例: 2" />
+          </label>
+          <label>
+            <span>最低在庫数</span>
+            <input id="editProductMinQuantity" type="number" min="0" inputmode="numeric" />
+          </label>
+          <label>
+            <span>期限</span>
+            <input id="editProductExpiryDate" type="date" />
+          </label>
+          <label>
+            <span>バーコード番号</span>
+            <input id="editProductBarcode" type="text" inputmode="numeric" autocomplete="off" />
+          </label>
+          <label class="edit-wide">
+            <span>メモ</span>
+            <textarea id="editProductMemo" rows="3" placeholder="例: 詰め替え用を買う"></textarea>
+          </label>
+          <label class="edit-wide photo-field">
+            <span>画像</span>
+            <input id="editProductPhotoInput" type="file" accept="image/*" />
+          </label>
+        </div>
+        <div class="photo-preview" id="editProductPhotoPreview" hidden>
+          <img alt="選択した在庫写真" />
+          <button class="photo-clear-button" data-action="clear-edit-product-photo" type="button">
+            写真を外す
+          </button>
+        </div>
+
+        <div class="scanner-actions">
+          <button class="secondary-action" data-action="close-product-edit" type="button">閉じる</button>
+          <button class="primary-action" data-action="save-product-edit" type="button">保存</button>
+        </div>
+      </section>
+    </dialog>
+
     <dialog class="scanner-dialog" id="barcodeDialog">
       <section class="scanner-sheet" aria-labelledby="barcodeDialogTitle">
         <div class="scanner-grabber"></div>
@@ -557,6 +623,11 @@
         </div>
       </section>
     </dialog>
+
+    <div class="update-banner" id="updateBanner" hidden>
+      <span>新しいバージョンがあります。</span>
+      <button data-action="apply-app-update" type="button">更新する</button>
+    </div>
 
     <script type="module">
       import { createClient } from "https://esm.sh/@supabase/supabase-js@2";

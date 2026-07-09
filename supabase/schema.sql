@@ -27,6 +27,19 @@ create table if not exists stockflow_products (
   primary key (household_id, id)
 );
 
+create table if not exists stockflow_barcode_dictionary (
+  household_id text not null references stockflow_households (id) on delete cascade,
+  barcode text not null,
+  name text not null,
+  category text not null default 'その他',
+  min_quantity integer not null default 1,
+  memo text not null default '',
+  image_url text not null default '',
+  updated_at timestamptz not null default now(),
+  updated_by uuid references auth.users (id),
+  primary key (household_id, barcode)
+);
+
 alter table stockflow_products
   add column if not exists updated_by uuid references auth.users (id);
 
@@ -38,6 +51,9 @@ create index if not exists stockflow_products_data_gin_idx
 
 create index if not exists stockflow_members_user_id_idx
   on stockflow_household_members (user_id);
+
+create index if not exists stockflow_barcode_dictionary_household_id_idx
+  on stockflow_barcode_dictionary (household_id);
 
 create unique index if not exists stockflow_households_share_code_idx
   on stockflow_households (share_code)
@@ -55,15 +71,18 @@ where id = 'family-home'
 alter table stockflow_households enable row level security;
 alter table stockflow_household_members enable row level security;
 alter table stockflow_products enable row level security;
+alter table stockflow_barcode_dictionary enable row level security;
 
 revoke all on table stockflow_households from anon;
 revoke all on table stockflow_household_members from anon;
 revoke all on table stockflow_products from anon;
+revoke all on table stockflow_barcode_dictionary from anon;
 
 grant usage on schema public to authenticated;
 grant select on table stockflow_households to authenticated;
 grant select, insert, update on table stockflow_household_members to authenticated;
 grant select, insert, update, delete on table stockflow_products to authenticated;
+grant select, insert, update, delete on table stockflow_barcode_dictionary to authenticated;
 
 create or replace function public.stockflow_is_member(target_household_id text)
 returns boolean
@@ -157,6 +176,35 @@ create policy "members can delete household products"
   to authenticated
   using (stockflow_is_member(household_id));
 
+drop policy if exists "members can read barcode dictionary" on stockflow_barcode_dictionary;
+create policy "members can read barcode dictionary"
+  on stockflow_barcode_dictionary
+  for select
+  to authenticated
+  using (stockflow_is_member(household_id));
+
+drop policy if exists "members can insert barcode dictionary" on stockflow_barcode_dictionary;
+create policy "members can insert barcode dictionary"
+  on stockflow_barcode_dictionary
+  for insert
+  to authenticated
+  with check (stockflow_is_member(household_id));
+
+drop policy if exists "members can update barcode dictionary" on stockflow_barcode_dictionary;
+create policy "members can update barcode dictionary"
+  on stockflow_barcode_dictionary
+  for update
+  to authenticated
+  using (stockflow_is_member(household_id))
+  with check (stockflow_is_member(household_id));
+
+drop policy if exists "members can delete barcode dictionary" on stockflow_barcode_dictionary;
+create policy "members can delete barcode dictionary"
+  on stockflow_barcode_dictionary
+  for delete
+  to authenticated
+  using (stockflow_is_member(household_id));
+
 create or replace function public.stockflow_claim_household()
 returns stockflow_household_members
 language plpgsql
@@ -203,3 +251,6 @@ comment on table stockflow_products is
 
 comment on column stockflow_products.household_id is
   'Family space identifier. RLS only allows authenticated members of this household to read or change rows.';
+
+comment on table stockflow_barcode_dictionary is
+  'Household barcode dictionary. When public APIs cannot identify a barcode, the family-entered product name is stored here for the next scan.';

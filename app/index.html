@@ -286,6 +286,14 @@
                 <span>個数</span>
                 <input id="productQuantityInput" type="number" min="0" inputmode="numeric" value="1" />
               </label>
+              <label>
+                <span>最低在庫数</span>
+                <input id="productMinQuantityInput" type="number" min="0" inputmode="numeric" value="1" />
+              </label>
+              <label>
+                <span>メモ</span>
+                <input id="productMemoInput" type="text" placeholder="例: 詰め替え用" autocomplete="off" />
+              </label>
               <label class="photo-field">
                 <span>写真</span>
                 <input id="productPhotoInput" type="file" accept="image/*" />
@@ -593,6 +601,9 @@
         <div class="scanner-view">
           <video id="barcodeVideo" playsinline muted></video>
           <div class="scan-frame" aria-hidden="true"></div>
+          <button class="torch-button" id="torchToggleButton" data-action="toggle-torch" type="button" hidden>
+            ライトON
+          </button>
           <div class="scanner-placeholder" id="scannerPlaceholder">
             <span class="sf-symbol" data-symbol="barcode"></span>
             <strong>カメラを起動します</strong>
@@ -603,6 +614,49 @@
         <p class="scanner-status" id="barcodeStatus">
           バーコードを枠の中に入れてください。
         </p>
+
+        <section class="barcode-fallback" id="barcodeFallbackForm" hidden>
+          <div class="barcode-fallback-head">
+            <strong>手入力で登録</strong>
+            <small id="fallbackBarcodeLabel">バーコード: -</small>
+          </div>
+          <input id="fallbackBarcodeInput" type="hidden" />
+          <div class="fallback-grid">
+            <label>
+              <span>商品名</span>
+              <input id="fallbackProductName" type="text" placeholder="例: ワイドハイターEX" autocomplete="off" />
+            </label>
+            <label>
+              <span>カテゴリ</span>
+              <input id="fallbackProductCategory" type="text" placeholder="例: 漂白剤" autocomplete="off" />
+            </label>
+            <label>
+              <span>在庫数</span>
+              <input id="fallbackProductQuantity" type="number" min="0" inputmode="numeric" value="1" />
+            </label>
+            <label>
+              <span>最低在庫数</span>
+              <input id="fallbackProductMinQuantity" type="number" min="0" inputmode="numeric" value="1" />
+            </label>
+            <label class="fallback-wide">
+              <span>メモ</span>
+              <textarea id="fallbackProductMemo" rows="2" placeholder="例: 詰め替え用"></textarea>
+            </label>
+            <label class="fallback-wide photo-field">
+              <span>画像</span>
+              <input id="fallbackProductPhotoInput" type="file" accept="image/*" />
+            </label>
+          </div>
+          <div class="photo-preview" id="fallbackProductPhotoPreview" hidden>
+            <img alt="選択した在庫写真" />
+            <button class="photo-clear-button" data-action="clear-fallback-photo" type="button">
+              写真を外す
+            </button>
+          </div>
+          <button class="manual-product-button" data-action="save-fallback-product" type="button">
+            この内容で登録
+          </button>
+        </section>
 
         <div class="manual-barcode">
           <label for="manualBarcodeInput">カメラが使えない場合</label>
@@ -636,7 +690,10 @@
     </script>
     <script type="module">
       import { BrowserMultiFormatReader } from "https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.1/+esm";
+      import { BarcodeFormat, DecodeHintType } from "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/+esm";
       window.StockFlowBarcodeReader = BrowserMultiFormatReader;
+      window.StockFlowBarcodeFormat = BarcodeFormat;
+      window.StockFlowDecodeHintType = DecodeHintType;
       window.dispatchEvent(new Event("barcode-reader-ready"));
     </script>
     <script defer src="./app.js"></script>

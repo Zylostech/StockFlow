@@ -9,6 +9,7 @@ const RING_LENGTH = 314;
 const SUPABASE_URL = "https://yswkmovtcesowsdqsskx.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_0UWiXJNBT9vGbequqNvFXg_Jn-AZ7KV";
 const STOCKFLOW_HOUSEHOLD_ID = "family-home";
+const PRODUCT_API_CONFIG_KEY = "stockflow.productApis.v1";
 const PRODUCT_LOOKUP_ENDPOINTS = [
   "https://world.openfoodfacts.org/api/v2/product/{barcode}.json?fields=product_name,product_name_ja,generic_name,generic_name_ja,brands,categories,categories_tags,image_front_url,image_url",
   "https://world.openproductsfacts.org/api/v2/product/{barcode}.json?fields=product_name,product_name_ja,generic_name,generic_name_ja,brands,categories,categories_tags,image_front_url,image_url"
@@ -133,6 +134,7 @@ const state = {
   activeTab: "home",
   searchQuery: "",
   products: loadProducts(),
+  barcodeDictionary: {},
   settings: loadSettings(),
   cloud: loadCloudConfig(),
   auth: {
@@ -154,7 +156,9 @@ const state = {
     timer: null,
     stream: null,
     active: false,
-    lastCode: ""
+    lastCode: "",
+    torchEnabled: false,
+    torchAvailable: false
   },
   update: {
     worker: null,
@@ -277,17 +281,126 @@ function createBarcodeProduct(barcode, productInfo) {
 
 async function lookupProductByBarcode(barcode) {
   const normalized = normalizeBarcode(barcode);
-  if (barcodeProducts[normalized]) return barcodeProducts[normalized];
+  const householdProduct = state.barcodeDictionary[normalized];
+  if (householdProduct) {
+    return {
+      ...householdProduct,
+      found: true,
+      lookupSource: "家庭内辞書"
+    };
+  }
+
+  if (barcodeProducts[normalized]) {
+    return {
+      ...barcodeProducts[normalized],
+      found: true,
+      lookupSource: "StockFlow"
+    };
+  }
+
+  const commerceProduct = await lookupProductFromCommerceApis(normalized);
+  if (commerceProduct) return commerceProduct;
 
   const apiProduct = await lookupProductByBarcodeApi(normalized);
   if (apiProduct) return apiProduct;
 
   return {
-    name: "商品名未取得",
-    category: "未分類",
+    name: "",
+    category: "その他",
     imageUrl: "",
-    minQuantity: 1
+    minQuantity: 1,
+    found: false,
+    lookupSource: "手入力"
   };
+}
+
+async function lookupProductFromCommerceApis(barcode) {
+  const config = getProductApiConfig();
+  const lookups = [
+    () => lookupRakutenProduct(barcode, config.rakutenApplicationId),
+    () => lookupYahooProduct(barcode, config.yahooClientId)
+  ];
+
+  for (const lookup of lookups) {
+    const product = await lookup();
+    if (product) return product;
+  }
+
+  return null;
+}
+
+function getProductApiConfig() {
+  const fallback = {
+    rakutenApplicationId: "",
+    yahooClientId: ""
+  };
+
+  try {
+    return {
+      ...fallback,
+      ...JSON.parse(localStorage.getItem(PRODUCT_API_CONFIG_KEY) || "{}"),
+      ...(window.StockFlowProductApis || {})
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+async function lookupRakutenProduct(barcode, applicationId) {
+  if (!applicationId) return null;
+
+  const url = new URL("https://app.rakuten.co.jp/services/api/IchibaItem/Search/20220601");
+  url.searchParams.set("applicationId", applicationId);
+  url.searchParams.set("keyword", barcode);
+  url.searchParams.set("hits", "1");
+  url.searchParams.set("format", "json");
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const item = payload.Items?.[0]?.Item;
+    if (!item?.itemName) return null;
+
+    return {
+      name: cleanCommerceProductName(item.itemName),
+      category: item.genreName || "その他",
+      imageUrl: item.mediumImageUrls?.[0]?.imageUrl || item.smallImageUrls?.[0]?.imageUrl || "",
+      minQuantity: 1,
+      found: true,
+      lookupSource: "楽天"
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function lookupYahooProduct(barcode, clientId) {
+  if (!clientId) return null;
+
+  const url = new URL("https://shopping.yahooapis.jp/ShoppingWebService/V3/itemSearch");
+  url.searchParams.set("appid", clientId);
+  url.searchParams.set("query", barcode);
+  url.searchParams.set("results", "1");
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const hit = payload.hits?.[0];
+    if (!hit?.name) return null;
+
+    return {
+      name: cleanCommerceProductName(hit.name),
+      category: hit.genreCategory?.name || "その他",
+      imageUrl: hit.image?.medium || hit.image?.small || "",
+      minQuantity: 1,
+      found: true,
+      lookupSource: "Yahoo"
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function lookupProductByBarcodeApi(barcode) {
@@ -316,7 +429,9 @@ async function lookupProductByBarcodeApi(barcode) {
         name,
         category: getProductCategory(product),
         imageUrl: product.image_front_url || product.image_url || "",
-        minQuantity: 1
+        minQuantity: 1,
+        found: true,
+        lookupSource: "Open Food Facts"
       };
     } catch {
       // Try the next public product database.
@@ -324,6 +439,14 @@ async function lookupProductByBarcodeApi(barcode) {
   }
 
   return null;
+}
+
+function cleanCommerceProductName(value) {
+  return cleanProductText(value)
+    .replace(/\s+/g, " ")
+    .replace(/【[^】]+】/g, "")
+    .replace(/\[[^\]]+\]/g, "")
+    .trim();
 }
 
 function getProductCategory(product) {
@@ -365,50 +488,79 @@ async function addProductByBarcode(barcode) {
   }
 
   setScannerStatus(`JANコードを取得しました: ${normalized}。商品情報を検索しています...`);
+  stopBarcodeScanner();
+
+  const currentBarcodeProduct = findProductByBarcode(normalized);
+  if (currentBarcodeProduct) {
+    incrementBarcodeProduct(currentBarcodeProduct.id, normalized);
+    setActiveTab("inventory");
+    setScannerStatus(`${currentBarcodeProduct.name} を1個追加しました。`);
+    closeBarcodeScanner();
+    return currentBarcodeProduct;
+  }
+
   const productInfo = await lookupProductByBarcode(normalized);
-  const existingProduct = state.products.find((product) => {
-    return (
-      product.barcode === normalized ||
-      (!product.barcode &&
-        product.name === productInfo.name &&
-        product.category === productInfo.category)
-    );
-  });
+  const existingProduct = productInfo.found
+    ? state.products.find((product) => {
+        return (
+          product.barcode === normalized ||
+          (!product.barcode &&
+            product.name === productInfo.name &&
+            product.category === productInfo.category)
+        );
+      })
+    : null;
 
   if (existingProduct) {
-    state.products = state.products.map((product) => {
-      if (product.id !== existingProduct.id) return product;
-      return {
-        ...product,
-        barcode: normalized,
-        source: product.source === "starter" ? "barcode" : product.source,
-        quantity: product.quantity + 1,
-        daysLeft: Math.max(product.daysLeft, 14),
-        nextOutDate: dateAfter(Math.max(product.daysLeft, 14)),
-        updatedAt: new Date().toISOString(),
-        shopping: {
-          ...product.shopping,
-          completed: false
-        },
-        history: [
-          ...(product.history || []),
-          { type: "barcode-restock", barcode: normalized, at: new Date().toISOString() }
-        ]
-      };
-    });
+    incrementBarcodeProduct(existingProduct.id, normalized);
+    await saveBarcodeDictionary(findProductByBarcode(normalized));
+  } else if (productInfo.found) {
+    const product = createBarcodeProduct(normalized, productInfo);
+    state.products = [product, ...state.products];
+    await saveBarcodeDictionary(product);
   } else {
-    state.products = [
-      createBarcodeProduct(normalized, productInfo),
-      ...state.products
-    ];
+    openBarcodeFallbackForm(normalized, productInfo);
+    setScannerStatus("商品情報が見つかりませんでした。手入力で登録できます。次回から家庭内辞書で呼び出します。");
+    return productInfo;
   }
 
   saveProducts({ sync: true });
   render();
   setActiveTab("inventory");
-  setScannerStatus(`${productInfo.name} を在庫に追加しました。`);
+  setScannerStatus(`${productInfo.name} を在庫に追加しました。${productInfo.lookupSource ? `取得元: ${productInfo.lookupSource}` : ""}`);
   closeBarcodeScanner();
   return productInfo;
+}
+
+function findProductByBarcode(barcode) {
+  return state.products.find((product) => product.barcode === barcode);
+}
+
+function incrementBarcodeProduct(productId, barcode) {
+  state.products = state.products.map((product) => {
+    if (product.id !== productId) return product;
+    const quantity = product.quantity + 1;
+    const daysLeft = Math.max(product.daysLeft, estimateDaysLeft(quantity));
+    return {
+      ...product,
+      barcode,
+      source: product.source === "starter" ? "barcode" : product.source,
+      quantity,
+      daysLeft,
+      nextOutDate: dateAfter(daysLeft),
+      updatedAt: new Date().toISOString(),
+      shopping: {
+        ...product.shopping,
+        completed: false
+      },
+      history: [
+        ...(product.history || []),
+        { type: "barcode-restock", barcode, at: new Date().toISOString() }
+      ]
+    };
+  });
+  saveProducts({ sync: true });
+  render();
 }
 
 function loadProducts() {
@@ -582,6 +734,7 @@ async function applySession(session) {
 
   state.auth.member = member;
   await loadFamilyMembers();
+  await loadBarcodeDictionary();
   await pullProductsFromCloud();
   render();
 
@@ -983,6 +1136,7 @@ async function signOut() {
   state.auth.member = null;
   state.auth.members = [];
   state.auth.pinUnlocked = false;
+  state.barcodeDictionary = {};
   state.products = [];
   saveProducts();
   setAuthMode("family-passcode");
@@ -1015,6 +1169,62 @@ async function loadFamilyMembers() {
   if (!error) {
     state.auth.members = data || [];
   }
+}
+
+async function loadBarcodeDictionary() {
+  const client = getSupabaseClient();
+  if (!client || !state.auth.user) return;
+
+  const { data, error } = await client
+    .from("stockflow_barcode_dictionary")
+    .select("barcode, name, category, min_quantity, memo, image_url")
+    .eq("household_id", STOCKFLOW_HOUSEHOLD_ID);
+
+  if (error) {
+    state.barcodeDictionary = {};
+    return;
+  }
+
+  state.barcodeDictionary = (data || []).reduce((dictionary, item) => {
+    dictionary[item.barcode] = {
+      name: item.name,
+      category: item.category || "その他",
+      minQuantity: Number(item.min_quantity || 1),
+      memo: item.memo || "",
+      imageUrl: item.image_url || ""
+    };
+    return dictionary;
+  }, {});
+}
+
+async function saveBarcodeDictionary(product) {
+  const barcode = normalizeBarcode(product?.barcode);
+  if (!barcode || !isCloudWritable()) return;
+
+  const entry = {
+    household_id: STOCKFLOW_HOUSEHOLD_ID,
+    barcode,
+    name: product.name || "",
+    category: product.category || "その他",
+    min_quantity: Number(product.minQuantity || 1),
+    memo: product.memo || "",
+    image_url: product.imageUrl || "",
+    updated_at: new Date().toISOString(),
+    updated_by: state.auth.user.id
+  };
+
+  state.barcodeDictionary[barcode] = {
+    name: entry.name,
+    category: entry.category,
+    minQuantity: entry.min_quantity,
+    memo: entry.memo,
+    imageUrl: entry.image_url
+  };
+
+  const client = getSupabaseClient();
+  await client
+    .from("stockflow_barcode_dictionary")
+    .upsert(entry, { onConflict: "household_id,barcode" });
 }
 
 async function inviteFamilyMember() {
@@ -1206,7 +1416,9 @@ async function openBarcodeScanner() {
   dialog.showModal();
   hydrateSymbols(dialog);
   state.scanner.lastCode = "";
+  hideBarcodeFallbackForm();
   setScannerStatus("カメラを準備しています。");
+  setTorchButtonState(false, false);
 
   if (!navigator.mediaDevices?.getUserMedia) {
     setScannerStatus("この環境ではカメラを起動できません。下の番号入力で追加できます。");
@@ -1226,8 +1438,11 @@ function getBarcodeVideoConstraints() {
   return {
     video: {
       facingMode: { ideal: "environment" },
-      width: { ideal: 1280 },
-      height: { ideal: 720 }
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      frameRate: { ideal: 30 },
+      focusMode: { ideal: "continuous" },
+      exposureMode: { ideal: "continuous" }
     },
     audio: false
   };
@@ -1235,39 +1450,135 @@ function getBarcodeVideoConstraints() {
 
 async function startBarcodeDecoding(video, constraints) {
   const BarcodeReader = await waitForBarcodeReader();
+  state.scanner.stream = await navigator.mediaDevices.getUserMedia(constraints);
+  video.srcObject = state.scanner.stream;
+  await video.play();
+  $(".scanner-view").classList.add("is-live");
+  await configureCameraTrack();
 
   if (BarcodeReader) {
-    setScannerStatus("バーコードを枠の中に入れてください。");
-    state.scanner.reader ||= new BarcodeReader();
-    $(".scanner-view").classList.add("is-live");
-    state.scanner.controls = await state.scanner.reader.decodeFromConstraints(
-      constraints,
+    setScannerStatus("JAN / EAN / UPC を枠の中に大きく入れてください。読み取ったら自動で止まります。");
+    state.scanner.reader = createBarcodeReader(BarcodeReader);
+    if (typeof state.scanner.reader.decodeFromVideoElement === "function") {
+      state.scanner.controls = await state.scanner.reader.decodeFromVideoElement(
+        video,
+        (_result, _error, controls) => {
+          const code = _result?.getText?.();
+          if (code) handleDetectedBarcode(code, controls);
+        }
+      );
+      return;
+    }
+
+    state.scanner.controls = await state.scanner.reader.decodeFromVideoDevice(
+      undefined,
       video,
       (result) => {
         const code = result?.getText?.();
-        if (code && code !== state.scanner.lastCode) {
-          state.scanner.lastCode = code;
-          addProductByBarcode(code);
-        }
+        if (code) handleDetectedBarcode(code);
       }
     );
     return;
   }
 
   if ("BarcodeDetector" in window) {
-    state.scanner.stream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = state.scanner.stream;
-    await video.play();
-    $(".scanner-view").classList.add("is-live");
     state.scanner.detector ||= new BarcodeDetector({
-      formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"]
+      formats: ["ean_13", "ean_8", "upc_a", "upc_e"]
     });
-    setScannerStatus("バーコードを枠の中に入れてください。");
+    setScannerStatus("JAN / EAN / UPC を枠の中に大きく入れてください。読み取ったら自動で止まります。");
     scanBarcodeFrame();
     return;
   }
 
   setScannerStatus("このブラウザでは自動読み取りを読み込めませんでした。下の番号入力で追加できます。");
+}
+
+function createBarcodeReader(BarcodeReader) {
+  try {
+    const hints = new Map();
+    const formats = getZxingFormats();
+    if (window.StockFlowDecodeHintType?.POSSIBLE_FORMATS && formats.length) {
+      hints.set(window.StockFlowDecodeHintType.POSSIBLE_FORMATS, formats);
+    }
+    if (window.StockFlowDecodeHintType?.TRY_HARDER) {
+      hints.set(window.StockFlowDecodeHintType.TRY_HARDER, true);
+    }
+    return new BarcodeReader(hints, 300);
+  } catch {
+    return new BarcodeReader();
+  }
+}
+
+function getZxingFormats() {
+  const format = window.StockFlowBarcodeFormat || {};
+  return [
+    format.EAN_13,
+    format.EAN_8,
+    format.UPC_A,
+    format.UPC_E
+  ].filter(Boolean);
+}
+
+async function configureCameraTrack() {
+  const track = state.scanner.stream?.getVideoTracks?.()[0];
+  if (!track) return;
+
+  try {
+    await track.applyConstraints({
+      advanced: [
+        { focusMode: "continuous" },
+        { exposureMode: "continuous" }
+      ]
+    });
+  } catch {
+    // Some iPhone/Safari versions expose fewer camera controls.
+  }
+
+  const capabilities = track.getCapabilities?.() || {};
+  state.scanner.torchAvailable = Boolean(capabilities.torch);
+  setTorchButtonState(state.scanner.torchAvailable, false);
+}
+
+async function toggleScannerTorch() {
+  const track = state.scanner.stream?.getVideoTracks?.()[0];
+  if (!track || !state.scanner.torchAvailable) {
+    setScannerStatus("この端末ではライト切替に対応していません。");
+    return;
+  }
+
+  state.scanner.torchEnabled = !state.scanner.torchEnabled;
+
+  try {
+    await track.applyConstraints({ advanced: [{ torch: state.scanner.torchEnabled }] });
+    setTorchButtonState(true, state.scanner.torchEnabled);
+  } catch {
+    state.scanner.torchEnabled = false;
+    setTorchButtonState(false, false);
+    setScannerStatus("ライトを切り替えできませんでした。");
+  }
+}
+
+function setTorchButtonState(available, enabled) {
+  const button = $("#torchToggleButton");
+  if (!button) return;
+  button.hidden = !available;
+  button.classList.toggle("is-on", enabled);
+  button.textContent = enabled ? "ライトOFF" : "ライトON";
+}
+
+function handleDetectedBarcode(rawCode, controls) {
+  const code = normalizeBarcode(rawCode);
+  if (!code || code === state.scanner.lastCode) return;
+
+  if (!isLikelyProductBarcode(code)) {
+    setScannerStatus("JAN / EAN / UPC 全体を読み取れませんでした。バーコードを枠いっぱいに近づけてください。");
+    return;
+  }
+
+  state.scanner.lastCode = code;
+  controls?.stop?.();
+  stopBarcodeScanner();
+  addProductByBarcode(code);
 }
 
 function waitForBarcodeReader() {
@@ -1310,9 +1621,8 @@ async function scanBarcodeFrame() {
     const codes = await state.scanner.detector.detect($("#barcodeVideo"));
     const rawValue = codes[0]?.rawValue;
 
-    if (rawValue && rawValue !== state.scanner.lastCode) {
-      state.scanner.lastCode = rawValue;
-      addProductByBarcode(rawValue);
+    if (rawValue) {
+      handleDetectedBarcode(rawValue);
       return;
     }
   } catch {
@@ -1324,6 +1634,8 @@ async function scanBarcodeFrame() {
 
 function stopBarcodeScanner() {
   state.scanner.active = false;
+  state.scanner.torchEnabled = false;
+  state.scanner.torchAvailable = false;
   if (state.scanner.controls) {
     state.scanner.controls.stop();
     state.scanner.controls = null;
@@ -1345,6 +1657,7 @@ function stopBarcodeScanner() {
   }
 
   $(".scanner-view")?.classList.remove("is-live");
+  setTorchButtonState(false, false);
 }
 
 function closeBarcodeScanner() {
@@ -1368,16 +1681,148 @@ function addManualBarcode() {
   addProductByBarcode(barcode);
 }
 
+function openBarcodeFallbackForm(barcode, productInfo = {}) {
+  const form = $("#barcodeFallbackForm");
+  if (!form) return;
+
+  $("#fallbackBarcodeInput").value = barcode;
+  $("#fallbackBarcodeLabel").textContent = `バーコード: ${barcode}`;
+  $("#fallbackProductName").value = productInfo.name || "";
+  $("#fallbackProductCategory").value = productInfo.category || "その他";
+  $("#fallbackProductQuantity").value = "1";
+  $("#fallbackProductMinQuantity").value = String(productInfo.minQuantity || 1);
+  $("#fallbackProductMemo").value = productInfo.memo || "";
+  $("#fallbackProductPhotoInput").value = "";
+  clearFallbackPhoto();
+  if (productInfo.imageUrl) {
+    setFallbackPhotoPreview(productInfo.imageUrl);
+  }
+  form.hidden = false;
+  focusSoon("#fallbackProductName");
+}
+
+function hideBarcodeFallbackForm() {
+  const form = $("#barcodeFallbackForm");
+  if (form) form.hidden = true;
+  clearFallbackPhoto();
+}
+
+function previewFallbackPhoto() {
+  const input = $("#fallbackProductPhotoInput");
+  const file = input?.files?.[0];
+
+  if (!file) {
+    clearFallbackPhoto();
+    return;
+  }
+
+  const preview = $("#fallbackProductPhotoPreview");
+  const image = preview?.querySelector("img");
+  if (!preview || !image) return;
+  image.src = URL.createObjectURL(file);
+  preview.hidden = false;
+}
+
+function setFallbackPhotoPreview(imageUrl) {
+  const preview = $("#fallbackProductPhotoPreview");
+  const image = preview?.querySelector("img");
+  if (!preview || !image) return;
+  image.src = imageUrl;
+  preview.hidden = false;
+}
+
+function clearFallbackPhoto() {
+  const input = $("#fallbackProductPhotoInput");
+  const preview = $("#fallbackProductPhotoPreview");
+  const image = preview?.querySelector("img");
+
+  if (input) input.value = "";
+  if (image) image.removeAttribute("src");
+  if (preview) preview.hidden = true;
+}
+
+async function saveFallbackProduct() {
+  if (!requireCloudSave()) return;
+
+  const barcode = normalizeBarcode($("#fallbackBarcodeInput").value);
+  const name = $("#fallbackProductName").value.trim();
+  const category = $("#fallbackProductCategory").value.trim() || "その他";
+  const quantity = Math.max(0, Number($("#fallbackProductQuantity").value || 0));
+  const minQuantity = Math.max(0, Number($("#fallbackProductMinQuantity").value || 1));
+  const memo = $("#fallbackProductMemo").value.trim();
+  const imageUrl = await readProductPhoto($("#fallbackProductPhotoInput").files?.[0]);
+
+  if (!barcode) {
+    setScannerStatus("バーコード番号を確認してください。");
+    return;
+  }
+
+  if (!name) {
+    setScannerStatus("商品名を入力してください。");
+    $("#fallbackProductName").focus();
+    return;
+  }
+
+  const existingProduct = findProductByBarcode(barcode);
+  let savedProduct;
+
+  if (existingProduct) {
+    state.products = state.products.map((product) => {
+      if (product.id !== existingProduct.id) return product;
+      savedProduct = {
+        ...product,
+        name,
+        category,
+        quantity: product.quantity + Math.max(1, quantity),
+        minQuantity,
+        memo,
+        imageUrl: imageUrl || product.imageUrl,
+        updatedAt: new Date().toISOString(),
+        shopping: {
+          ...product.shopping,
+          completed: false
+        }
+      };
+      return savedProduct;
+    });
+  } else {
+    savedProduct = createProduct({
+      id: `barcode-${barcode}-${Date.now()}`,
+      barcode,
+      source: "barcode-manual",
+      name,
+      category,
+      imageUrl,
+      quantity,
+      minQuantity,
+      memo,
+      updatedAt: new Date().toISOString()
+    });
+    state.products = [savedProduct, ...state.products];
+  }
+
+  await saveBarcodeDictionary(savedProduct);
+  saveProducts({ sync: true });
+  render();
+  setActiveTab("inventory");
+  setScannerStatus(`${name} を登録しました。次回からこのバーコードで呼び出します。`);
+  closeBarcodeScanner();
+}
+
 async function addManualProduct() {
   if (!requireCloudSave()) return;
 
   const nameInput = $("#productNameInput");
   const categoryInput = $("#productCategoryInput");
   const quantityInput = $("#productQuantityInput");
+  const minQuantityInput = $("#productMinQuantityInput");
+  const memoInput = $("#productMemoInput");
   const photoInput = $("#productPhotoInput");
   const name = nameInput.value.trim();
   const category = categoryInput.value.trim() || "その他";
   const quantity = Math.max(0, Number(quantityInput.value || 0));
+  const minQuantity = Math.max(0, Number(minQuantityInput.value || 1));
+  const memo = memoInput.value.trim();
   const imageUrl = await readProductPhoto(photoInput.files?.[0]);
 
   if (!name) {
@@ -1401,7 +1846,8 @@ async function addManualProduct() {
         category,
         imageUrl,
         quantity,
-        minQuantity: 1,
+        minQuantity,
+        memo,
         updatedAt: new Date().toISOString()
       }),
       ...state.products
@@ -1413,6 +1859,8 @@ async function addManualProduct() {
   nameInput.value = "";
   categoryInput.value = "";
   quantityInput.value = "1";
+  minQuantityInput.value = "1";
+  memoInput.value = "";
   clearProductPhoto();
   setCloudStatus("在庫を追加しました。");
 }
@@ -1595,11 +2043,12 @@ async function saveProductEdit() {
   const nextQuantity = quantity + bulkAdd;
   const daysLeft = estimateDaysLeft(nextQuantity);
   const nextImageUrl = imageUrl || (clearedPhoto ? "" : existingProduct.imageUrl);
+  let savedProduct;
 
   state.products = state.products.map((product) => {
     if (product.id !== productId) return product;
 
-    return {
+    savedProduct = {
       ...product,
       name,
       category,
@@ -1621,8 +2070,12 @@ async function saveProductEdit() {
         { type: "edit", bulkAdd, at: new Date().toISOString() }
       ]
     };
+    return savedProduct;
   });
 
+  if (savedProduct?.barcode) {
+    await saveBarcodeDictionary(savedProduct);
+  }
   $("#editProductPhotoPreview")?.removeAttribute("data-cleared");
   saveProducts({ sync: true });
   render();
@@ -1783,6 +2236,7 @@ function bindStaticEvents() {
 
   $("#productPhotoInput").addEventListener("change", previewProductPhoto);
   $("#editProductPhotoInput").addEventListener("change", previewEditProductPhoto);
+  $("#fallbackProductPhotoInput").addEventListener("change", previewFallbackPhoto);
 
   [
     ["#familyPasscodeInput", "unlock-family-passcode"],
@@ -1844,7 +2298,10 @@ function handleAction(action) {
     "scan-barcode": openBarcodeScanner,
     "close-barcode": closeBarcodeScanner,
     "restart-barcode": restartBarcodeScanner,
+    "toggle-torch": toggleScannerTorch,
     "manual-barcode": addManualBarcode,
+    "save-fallback-product": saveFallbackProduct,
+    "clear-fallback-photo": clearFallbackPhoto,
     "add-manual-product": addManualProduct,
     "clear-product-photo": clearProductPhoto,
     "close-product-edit": closeProductEditor,

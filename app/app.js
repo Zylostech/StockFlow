@@ -1581,9 +1581,14 @@ function handleDetectedBarcode(rawCode, controls) {
   addProductByBarcode(code);
 }
 
-function waitForBarcodeReader() {
+async function waitForBarcodeReader() {
   if (window.StockFlowBarcodeReader) {
-    return Promise.resolve(window.StockFlowBarcodeReader);
+    return window.StockFlowBarcodeReader;
+  }
+
+  const importedReader = await importBarcodeReader();
+  if (importedReader) {
+    return importedReader;
   }
 
   return new Promise((resolve) => {
@@ -1599,6 +1604,27 @@ function waitForBarcodeReader() {
 
     window.addEventListener("barcode-reader-ready", onReady, { once: true });
   });
+}
+
+async function importBarcodeReader() {
+  try {
+    const [{ BrowserMultiFormatReader }, library] = await Promise.all([
+      import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.1/+esm"),
+      import("https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/+esm").catch(() => ({}))
+    ]);
+    window.StockFlowBarcodeReader = BrowserMultiFormatReader;
+    window.StockFlowBarcodeFormat = library.BarcodeFormat || window.StockFlowBarcodeFormat;
+    window.StockFlowDecodeHintType = library.DecodeHintType || window.StockFlowDecodeHintType;
+    return BrowserMultiFormatReader;
+  } catch {
+    try {
+      const { BrowserMultiFormatReader } = await import("https://esm.sh/@zxing/browser@0.2.1");
+      window.StockFlowBarcodeReader = BrowserMultiFormatReader;
+      return BrowserMultiFormatReader;
+    } catch {
+      return null;
+    }
+  }
 }
 
 function openQuickActions() {

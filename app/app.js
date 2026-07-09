@@ -9,6 +9,10 @@ const RING_LENGTH = 314;
 const SUPABASE_URL = "https://yswkmovtcesowsdqsskx.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_0UWiXJNBT9vGbequqNvFXg_Jn-AZ7KV";
 const STOCKFLOW_HOUSEHOLD_ID = "family-home";
+const PRODUCT_LOOKUP_ENDPOINTS = [
+  "https://world.openfoodfacts.org/api/v2/product/{barcode}.json?fields=product_name,product_name_ja,generic_name,generic_name_ja,brands,categories,categories_tags,image_front_url,image_url",
+  "https://world.openproductsfacts.org/api/v2/product/{barcode}.json?fields=product_name,product_name_ja,generic_name,generic_name_ja,brands,categories,categories_tags,image_front_url,image_url"
+];
 
 const symbols = {
   house:
@@ -185,6 +189,7 @@ function createProduct(product) {
   const quantity = Number(product.quantity || 0);
   const minQuantity = Number(product.minQuantity || 1);
   const daysLeft = product.daysLeft ?? estimateDaysLeft(quantity);
+  const updatedAt = product.updatedAt || product.lastUpdatedAt || new Date().toISOString();
   return {
     id: product.id || crypto.randomUUID(),
     barcode: product.barcode || "",
@@ -196,6 +201,7 @@ function createProduct(product) {
     minQuantity,
     daysLeft,
     nextOutDate: product.nextOutDate || dateAfter(daysLeft),
+    updatedAt,
     shopping: {
       autoAdded: quantity <= minQuantity || daysLeft <= 6,
       completed: product.shopping?.completed || false
@@ -215,30 +221,100 @@ function createBarcodeProduct(barcode, productInfo) {
     quantity: 1,
     minQuantity: productInfo.minQuantity || 1,
     daysLeft: 14,
-    nextOutDate: dateAfter(14)
+    nextOutDate: dateAfter(14),
+    updatedAt: new Date().toISOString()
   });
 }
 
-function lookupProductByBarcode(barcode) {
+async function lookupProductByBarcode(barcode) {
   const normalized = normalizeBarcode(barcode);
-  return (
-    barcodeProducts[normalized] || {
-      name: `バーコード商品 ${normalized.slice(-4)}`,
-      category: "その他",
-      imageUrl: productImages.kitchen,
-      minQuantity: 1
-    }
-  );
+  if (barcodeProducts[normalized]) return barcodeProducts[normalized];
+
+  const apiProduct = await lookupProductByBarcodeApi(normalized);
+  if (apiProduct) return apiProduct;
+
+  return {
+    name: "商品名未取得",
+    category: "未分類",
+    imageUrl: "",
+    minQuantity: 1
+  };
 }
 
-function addProductByBarcode(barcode) {
+async function lookupProductByBarcodeApi(barcode) {
+  if (!barcode) return null;
+
+  for (const endpoint of PRODUCT_LOOKUP_ENDPOINTS) {
+    try {
+      const response = await fetch(endpoint.replace("{barcode}", encodeURIComponent(barcode)));
+      if (!response.ok) continue;
+
+      const payload = await response.json();
+      const product = payload.product;
+      if (!product) continue;
+
+      const name = cleanProductText(
+        product.product_name_ja ||
+          product.product_name ||
+          product.generic_name_ja ||
+          product.generic_name ||
+          [product.brands, product.categories?.split(",")[0]].filter(Boolean).join(" ")
+      );
+
+      if (!name) continue;
+
+      return {
+        name,
+        category: getProductCategory(product),
+        imageUrl: product.image_front_url || product.image_url || "",
+        minQuantity: 1
+      };
+    } catch {
+      // Try the next public product database.
+    }
+  }
+
+  return null;
+}
+
+function getProductCategory(product) {
+  const categories = [
+    ...(Array.isArray(product.categories_tags) ? product.categories_tags : []),
+    product.categories || ""
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (/bleach|漂白|oxygen|chlorine/.test(categories)) return "漂白剤";
+  if (/detergent|laundry|洗濯/.test(categories)) return "洗濯";
+  if (/paper|tissue|toilet/.test(categories)) return "紙用品";
+  if (/drink|beverage|water|tea|飲料/.test(categories)) return "飲料";
+  if (/baby|diaper|育児|おむつ/.test(categories)) return "育児";
+  if (/food|snack|meal|食品|菓子/.test(categories)) return "食品";
+  return cleanProductText(product.categories?.split(",")[0]) || "その他";
+}
+
+function cleanProductText(value) {
+  return String(value || "")
+    .replace(/^en:/, "")
+    .replace(/^ja:/, "")
+    .trim();
+}
+
+async function addProductByBarcode(barcode) {
   const normalized = normalizeBarcode(barcode);
   if (!normalized) {
     setScannerStatus("バーコード番号を入力してください。");
     return null;
   }
+  if (!isLikelyProductBarcode(normalized)) {
+    setScannerStatus("JANコード全体を読み取れませんでした。バーコードを枠に大きく入れてください。");
+    state.scanner.lastCode = "";
+    return null;
+  }
 
-  const productInfo = lookupProductByBarcode(normalized);
+  setScannerStatus(`JANコードを取得しました: ${normalized}。商品情報を検索しています...`);
+  const productInfo = await lookupProductByBarcode(normalized);
   const existingProduct = state.products.find((product) => {
     return (
       product.barcode === normalized ||
@@ -258,6 +334,7 @@ function addProductByBarcode(barcode) {
         quantity: product.quantity + 1,
         daysLeft: Math.max(product.daysLeft, 14),
         nextOutDate: dateAfter(Math.max(product.daysLeft, 14)),
+        updatedAt: new Date().toISOString(),
         shopping: {
           ...product.shopping,
           completed: false
@@ -278,6 +355,7 @@ function addProductByBarcode(barcode) {
   saveProducts({ sync: true });
   render();
   setActiveTab("inventory");
+  setScannerStatus(`${productInfo.name} を在庫に追加しました。`);
   closeBarcodeScanner();
   return productInfo;
 }
@@ -1046,7 +1124,6 @@ async function startBarcodeDecoding(video, constraints) {
         const code = result?.getText?.();
         if (code && code !== state.scanner.lastCode) {
           state.scanner.lastCode = code;
-          setScannerStatus(`読み取りました: ${code}`);
           addProductByBarcode(code);
         }
       }
@@ -1112,7 +1189,6 @@ async function scanBarcodeFrame() {
 
     if (rawValue && rawValue !== state.scanner.lastCode) {
       state.scanner.lastCode = rawValue;
-      setScannerStatus(`読み取りました: ${rawValue}`);
       addProductByBarcode(rawValue);
       return;
     }
@@ -1162,10 +1238,11 @@ function restartBarcodeScanner() {
 
 function addManualBarcode() {
   const input = $("#manualBarcodeInput");
-  const product = addProductByBarcode(input.value);
-  if (product) {
+  const barcode = input.value;
+  if (normalizeBarcode(barcode)) {
     input.value = "";
   }
+  addProductByBarcode(barcode);
 }
 
 async function addManualProduct() {
@@ -1199,7 +1276,8 @@ async function addManualProduct() {
         category,
         imageUrl,
         quantity,
-        minQuantity: 1
+        minQuantity: 1,
+        updatedAt: new Date().toISOString()
       }),
       ...state.products
     ];
@@ -1225,6 +1303,7 @@ function updateExistingProduct(productId, quantityToAdd, imageUrl) {
       quantity,
       daysLeft,
       nextOutDate: dateAfter(daysLeft),
+      updatedAt: new Date().toISOString(),
       shopping: {
         ...product.shopping,
         completed: false
@@ -1305,6 +1384,7 @@ function changeProductQuantity(productId, delta) {
       quantity,
       daysLeft,
       nextOutDate: dateAfter(daysLeft),
+      updatedAt: new Date().toISOString(),
       shopping: {
         ...product.shopping,
         completed: false
@@ -1344,6 +1424,10 @@ function setScannerStatus(message) {
 
 function normalizeBarcode(value) {
   return String(value || "").replace(/\D/g, "");
+}
+
+function isLikelyProductBarcode(value) {
+  return [8, 12, 13, 14].includes(String(value).length);
 }
 
 function estimateDaysLeft(quantity) {
@@ -1578,7 +1662,7 @@ function getSafetyScore() {
 }
 
 function getNextProduct() {
-  return [...state.products].sort((a, b) => a.daysLeft - b.daysLeft)[0];
+  return [...state.products].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0];
 }
 
 function getShoppingItems() {
@@ -1600,10 +1684,10 @@ function renderHome() {
   $("#homeSummary").textContent =
     score >= 88 ? "今日は安心です" : score >= 72 ? "少しだけ準備しましょう" : "買い足しが必要です";
   $("#homeDetail").textContent = nextProduct
-    ? `${nextProduct.name} があと${nextProduct.daysLeft}日で無くなる予定です。`
+    ? `${nextProduct.name} を ${formatProductDate(nextProduct.updatedAt)} に更新しました。`
     : "商品が登録されると、ここに次に無くなるものが表示されます。";
 
-  $("#nextProductDate").textContent = nextProduct ? `不足予定 ${nextProduct.nextOutDate}` : "-";
+  $("#nextProductDate").textContent = nextProduct ? `最終更新 ${formatProductDate(nextProduct.updatedAt)}` : "-";
   $("#nextProductCard").innerHTML = nextProduct
     ? productCardTemplate(nextProduct)
     : emptyTemplate("まだ商品がありません。");
@@ -1679,10 +1763,12 @@ function productCardTemplate(product) {
       <div>
         <div class="product-title-line">
           <h3>${escapeHtml(product.name)}</h3>
-          <span class="days-left">あと${product.daysLeft}日</span>
         </div>
         <p class="product-meta">
-          残り${product.quantity}個 · ${escapeHtml(product.category)} · しきい値${product.minQuantity}個
+          ${escapeHtml(product.category)}
+        </p>
+        <p class="product-meta">
+          在庫: ${product.quantity}個 · 最終更新: ${formatProductDate(product.updatedAt)}
         </p>
       </div>
     </article>
@@ -1709,7 +1795,8 @@ function inventoryRowTemplate(product) {
       ${productVisualTemplate(product, "row-image")}
       <div class="row-copy">
         <strong>${escapeHtml(product.name)}</strong>
-        <small>${escapeHtml(product.category)} · あと${product.daysLeft}日</small>
+        <small>${escapeHtml(product.category)}</small>
+        <small>在庫: ${product.quantity}個 · 最終更新: ${formatProductDate(product.updatedAt)}</small>
       </div>
       <div class="quantity-control" aria-label="${escapeHtml(product.name)}の個数">
         <button data-quantity-change="-1" data-product-id="${product.id}" type="button" aria-label="${escapeHtml(product.name)}を1個減らす">
@@ -1734,10 +1821,21 @@ function shoppingRowTemplate(product) {
       ${productVisualTemplate(product, "row-image")}
       <div class="row-copy">
         <strong>${escapeHtml(product.name)}</strong>
-        <small>残り${product.quantity}個 · 不足予定 ${escapeHtml(product.nextOutDate)}</small>
+        <small>${escapeHtml(product.category)} · 在庫: ${product.quantity}個</small>
       </div>
     </article>
   `;
+}
+
+function formatProductDate(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "-";
+
+  return new Intl.DateTimeFormat("ja-JP", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric"
+  }).format(date);
 }
 
 function productVisualTemplate(product, className) {

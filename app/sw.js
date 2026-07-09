@@ -1,4 +1,4 @@
-const STOCKFLOW_CACHE = "stockflow-shell-v4";
+const STOCKFLOW_CACHE = "stockflow-shell-v5";
 const STOCKFLOW_ASSETS = [
   "/",
   "/index.html",

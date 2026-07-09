@@ -507,7 +507,7 @@ async function applySession(session) {
   renderAuthState();
 
   if (!state.auth.user) {
-    setCloudStatus("管理者ログインするとクラウド保存が有効になります。");
+    setCloudStatus("端末のみ保存中です。アプリ削除でも残すには管理者ログインが必要です。");
     return;
   }
 
@@ -653,7 +653,7 @@ function unlockFamilyPasscode() {
   setCloudStatus(
     state.auth.user
       ? "クラウド保存: 接続済み"
-      : "家族パスコードで利用中。クラウド同期は管理者ログイン後に有効になります。"
+      : "端末のみ保存中です。アプリ削除でも残すには設定から管理者ログインしてください。"
   );
 }
 
@@ -989,10 +989,12 @@ async function pullProductsFromCloud() {
   }
 
   if (data?.length) {
-    state.products = removeStarterProducts(data.map((row) => row.data)).map(normalizeProduct);
+    const cloudProducts = removeStarterProducts(data.map((row) => row.data)).map(normalizeProduct);
+    state.products = mergeProductsForCloud(state.products, cloudProducts);
     saveProducts();
     render();
-    setCloudStatus("クラウド保存: 接続済み");
+    setCloudStatus("クラウド保存: 接続済み。アプリを削除しても復元できます。");
+    await syncProductsToCloud();
     return;
   }
 
@@ -1002,7 +1004,10 @@ async function pullProductsFromCloud() {
 let cloudSyncTimer = null;
 
 function queueCloudSync() {
-  if (!getSupabaseClient() || !state.auth.user) return;
+  if (!getSupabaseClient() || !state.auth.user) {
+    setCloudStatus("端末のみ保存中です。アプリ削除でも残すには管理者ログインしてください。");
+    return;
+  }
   window.clearTimeout(cloudSyncTimer);
   cloudSyncTimer = window.setTimeout(syncProductsToCloud, 500);
 }
@@ -1038,6 +1043,25 @@ async function syncProductsToCloud() {
     .upsert(rows, { onConflict: "household_id,id" });
 
   setCloudStatus(error ? `保存エラー: ${error.message}` : "クラウド保存: 同期済み");
+}
+
+function mergeProductsForCloud(localProducts, cloudProducts) {
+  const merged = new Map();
+
+  [...cloudProducts, ...removeStarterProducts(localProducts).map(normalizeProduct)].forEach((product) => {
+    const current = merged.get(product.id);
+    if (!current || isProductNewer(product, current)) {
+      merged.set(product.id, product);
+    }
+  });
+
+  return Array.from(merged.values()).sort((a, b) => {
+    return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+  });
+}
+
+function isProductNewer(nextProduct, currentProduct) {
+  return new Date(nextProduct.updatedAt || 0) >= new Date(currentProduct.updatedAt || 0);
 }
 
 function renderCloudSettings() {
